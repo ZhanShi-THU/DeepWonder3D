@@ -12,6 +12,15 @@ The pipeline integrates **denoising**, **resolution registration**, **background
 
 ![principle](./figs/principle.png)
 
+## Quick Start
+
+We provide two versions of **DeepWonder3D**:
+
+1. **Python source code version** (primarily implemented in [PyTorch](https://pytorch.org/)), available directly in this repository. Installation instructions are provided in the following sections.
+2. **GUI version**, which can be downloaded [here](https://cloud.tsinghua.edu.cn/f/8a1dfafe84ec4f5a819f/?dl=1). This version can be used immediately without environment setup.
+
+To facilitate a quick hands-on experience with **DeepWonder3D**, we include a `datasets` folder in `DeepWonder3D_pytorch` as a demo for users to try out.
+
 ## Our Environment
 
 - Ubuntu 20.04
