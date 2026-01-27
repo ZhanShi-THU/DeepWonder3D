@@ -31,8 +31,20 @@ from deepwonder.SR.SR_utils import save_img_train, save_para_dict, UseStyle
 
 class train_sr_net_acc():
     def __init__(self, SR_para):
-        self.task_type = 'mean' #'signal'
-        self.net_type = '' #'signal'
+        """
+        Training wrapper for the Super-Resolution (SR) network.
+
+        Initializes hyperparameters, model configurations, and output directories
+        for training a Super-Resolution model. It supports both 'mean' and 'signal'
+        task types.
+
+        Args:
+            SR_para (dict): Configuration dictionary containing training parameters.
+                Key parameters include 'task_type', 'GPU', 'SR_n_epochs', 
+                'SR_batch_size', 'SR_f_maps', and directory paths.
+        """
+        self.task_type = 'mean' 
+        self.net_type = '' 
         self.if_D = 0
 
         self.GPU = '0,1'
@@ -72,7 +84,6 @@ class train_sr_net_acc():
 
         self.reset_para(SR_para)
         self.make_folder()
-        # self.reset_para(SR_para)
 
         if self.task_type == 'signal':
             self.SR_in_c = self.SR_img_s
@@ -87,11 +98,15 @@ class train_sr_net_acc():
         assert self.SR_sample_up>=self.SR_sample_down
 
 
-
-
     #########################################################################
     #########################################################################
     def make_folder(self):
+        """
+        Create output and checkpoint folders for SR training.
+
+        Generates timestamped subdirectories under the results and checkpoint 
+        base directories to ensure training sessions are uniquely stored.
+        """
         current_time ='SR_HALF_'+self.task_type+'_'+self.net_type+'_up'+str(self.SR_sample_up)\
             +'_down'+str(self.SR_sample_down) +'_'+datetime.datetime.now().strftime("%Y%m%d%H%M")
 
@@ -111,6 +126,13 @@ class train_sr_net_acc():
     #########################################################################
     #########################################################################
     def reset_para(self, SR_para):
+        """
+        Update instance attributes based on a provided parameter dictionary.
+
+        Args:
+            SR_para (dict): Dictionary containing key-value pairs to override
+                default class attributes.
+        """
         for key, value in SR_para.items():
             if hasattr(self, key):
                 setattr(self, key, value)
@@ -185,6 +207,7 @@ class train_sr_net_acc():
     #########################################################################
     #########################################################################
     def load_pretrain_para(self, SR_net_model_path):
+        """
         Load pretrained weights into the SR network.
 
         This method handles partial weight loading and potential key mismatches
@@ -192,6 +215,7 @@ class train_sr_net_acc():
 
         Args:
             SR_net_model_path (str): File path to the pretrained .pth checkpoint.
+        """
         model_dict = self.SR_net.state_dict().copy()
         save_model = torch.load(SR_net_model_path).copy()
 
@@ -276,6 +300,7 @@ class train_sr_net_acc():
         Args:
             input (torch.Tensor): Original high-resolution image patch stack.
 
+        Returns:
             tuple: (sr_in, sr_gt)
                 - sr_in (torch.Tensor): Downsampled low-resolution input.
                 - sr_gt (torch.Tensor): Corresponding high-resolution ground truth.
@@ -314,7 +339,6 @@ class train_sr_net_acc():
         return sr_in, sr_gt
 
 
-
     def all_loss(self, sr_gt, sr_out):
         """
         Calculate combined loss functions for the SR generator and discriminator.
@@ -325,6 +349,7 @@ class train_sr_net_acc():
 
         Args:
             sr_gt (torch.Tensor): Ground truth high-resolution image.
+            sr_out (torch.Tensor): Model-predicted super-resolution image.
 
         Returns:
             tuple: (final_loss, loss_D)
