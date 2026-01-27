@@ -114,6 +114,7 @@ class train_sr_net_acc():
         for key, value in SR_para.items():
             if hasattr(self, key):
                 setattr(self, key, value)
+
         '''
         if self.SR_use_pretrain:
             pretrain_yaml = self.SR_pretrain_path+'//'+self.SR_pretrain_model+'//'+self.task_type+'_SR_para'+'.yaml'
@@ -129,6 +130,7 @@ class train_sr_net_acc():
                 if self.task_type=='signal':
                     setattr(self, 'SR_img_s', pretrain_para['SR_img_s'])
         '''
+        
         print(UseStyle('Training parameters ----->', mode = 'bold', fore  = 'red'))
         print(self.__dict__)
 
@@ -136,6 +138,12 @@ class train_sr_net_acc():
     #########################################################################
     #########################################################################
     def save_para(self):
+        """
+        Save the current SR training configuration to YAML and TXT files.
+
+        Serializes instance attributes, excluding large objects like the 
+        network or optimizer, to ensure reproducibility.
+        """
         yaml_dict = self.__dict__.copy()
         if 'SR_net' in yaml_dict.keys():
             del yaml_dict['SR_net'] 
@@ -162,24 +170,37 @@ class train_sr_net_acc():
     #########################################################################
     #########################################################################
     def get_netpara(self, model):
+        """
+        Calculate the total number of trainable parameters in a model.
+
+        Args:
+            model (torch.nn.Module): The neural network model to analyze.
+
+        Returns:
+            int: Total count of parameters requiring gradients.
+        """
         return sum(p.numel() for p in model.parameters() if p.requires_grad)
     
 
     #########################################################################
     #########################################################################
     def load_pretrain_para(self, SR_net_model_path):
+        Load pretrained weights into the SR network.
+
+        This method handles partial weight loading and potential key mismatches
+        between the saved state dictionary and the current model.
+
+        Args:
+            SR_net_model_path (str): File path to the pretrained .pth checkpoint.
         model_dict = self.SR_net.state_dict().copy()
         save_model = torch.load(SR_net_model_path).copy()
-
-        # for key in model_dict:
-        #     print(key)
 
         save_model_key1 = list(save_model.keys())[0]
         model_dict_key1 = list(model_dict.keys())[0]
         print(save_model_key1)
         print(model_dict_key1)
 
-        name_para1 = save_model_key1 #'module.net1.conv1.conv1.0.weight'
+        name_para1 = save_model_key1 
         if name_para1 in model_dict:
             print(model_dict[name_para1].size())
 
@@ -194,10 +215,15 @@ class train_sr_net_acc():
     #########################################################################
     #########################################################################
     def initialize_model(self):
+        """
+        Initialize the SR network, optimizers, and optional discriminator.
+
+        Sets up CUDA environment, constructs the SR_Net, wraps it for 
+        multi-GPU usage, and initializes the Adam optimizer. Optionally 
+        loads pre-trained weights and initializes a Discriminator network.
+        """
         GPU_list = self.GPU
         os.environ["CUDA_VISIBLE_DEVICES"] = GPU_list
-
-        # SR_L_Net SR_Net SR_trans_Net
 
         self.SR_net = SR_Net(net_type = self.net_type,
                             in_ch = self.SR_in_c, 
@@ -205,7 +231,6 @@ class train_sr_net_acc():
                             f_num = self.SR_f_maps)
 
         self.SR_net = torch.nn.DataParallel(self.SR_net) 
-        # self.SR_net.half()
         self.SR_net.cuda()
         if self.SR_use_pretrain:
             SR_net_pth_name = self.SR_pretrain_index
@@ -226,6 +251,12 @@ class train_sr_net_acc():
     #########################################################################
     #########################################################################
     def generate_patch(self):
+        """
+        Generate training patches based on the current task type.
+
+        Invokes task-specific preprocessing functions to prepare image lists
+        and coordinate metadata for the dataset loader.
+        """
         if self.task_type == 'mean':
             self.name_list, self.img_list, self.coordinate_list = train_preprocess_mean_SR(self)
         if self.task_type == 'signal':
@@ -235,9 +266,20 @@ class train_sr_net_acc():
     #########################################################################
     #########################################################################
     def get_SR_inputGT(self, input):
-        # print('get_SR_inputGT input -----> ', input.cpu().detach().numpy().max(), input.cpu().detach().numpy().min())
-        # input = input/self.SR_norm_factor
-        # print('get_SR_inputGT input -----> ', input.cpu().detach().numpy().max(), input.cpu().detach().numpy().min())
+        """
+        Prepare low-resolution input and high-resolution ground truth pairs.
+
+        Randomly samples a magnification factor and applies bilinear 
+        interpolation to downsample the input, creating a synthetic 
+        super-resolution pair.
+
+        Args:
+            input (torch.Tensor): Original high-resolution image patch stack.
+
+            tuple: (sr_in, sr_gt)
+                - sr_in (torch.Tensor): Downsampled low-resolution input.
+                - sr_gt (torch.Tensor): Corresponding high-resolution ground truth.
+        """
         self.up_rate = random.randint(self.SR_sample_down, self.SR_sample_up)
         img_size = self.up_rate*self.SR_sub_img_size
         if self.task_type == 'mean':
@@ -253,9 +295,6 @@ class train_sr_net_acc():
             sr_in1 = input[:, :, 0:img_size, 0:img_size].clone()
             sr_in = F.interpolate(sr_in1, (self.SR_sub_img_size, self.SR_sub_img_size),  mode='bilinear', align_corners=False)
             
-            # sr_gt = sr_in1[:, c_slices, :, :].clone()
-            # sr_gt = sr_in1.clone() # [:, c_slices, :, :].clone()
-
             if self.SR_out_c==1:
                 if_merge_one = 1
             if self.SR_out_c>1:
@@ -268,17 +307,7 @@ class train_sr_net_acc():
             
             if len(sr_gt.shape)==3:
                 sr_gt = sr_gt.unsqueeze(dim=1)
-            '''
-            delete_num = random.randint(0,3)
-            if delete_num==1:
-                sr_in[:,0,:,:]=0
-                sr_in[:,-1,:,:]=0
-            if delete_num==2:
-                sr_in[:,0,:,:]=0
-                sr_in[:,1,:,:]=0
-                sr_in[:,-1,:,:]=0
-                sr_in[:,-2,:,:]=0
-            '''
+
             del sr_in1, input
             import gc
             gc.collect()
@@ -287,12 +316,26 @@ class train_sr_net_acc():
 
 
     def all_loss(self, sr_gt, sr_out):
+        """
+        Calculate combined loss functions for the SR generator and discriminator.
+
+        Computes L1 and L2 pixel-wise reconstruction losses. If adversarial 
+        training is enabled, also computes the binary cross-entropy loss 
+        for the generator and discriminator.
+
+        Args:
+            sr_gt (torch.Tensor): Ground truth high-resolution image.
+
+        Returns:
+            tuple: (final_loss, loss_D)
+                - final_loss (torch.Tensor): Total loss for the generator.
+                - loss_D (torch.Tensor): Total loss for the discriminator.
+        """
         L1_pixelwise = torch.nn.L1Loss().cuda()
         L2_pixelwise = torch.nn.MSELoss().cuda()
 
         L1_loss_sr = L1_pixelwise(sr_gt, sr_out)
         L2_loss_sr = L2_pixelwise(sr_gt.float(), sr_out.float())
-        # print(L1_loss_sr ,L2_loss_sr)
         final_loss = L1_loss_sr +L2_loss_sr
 
         sr_gt_std = torch.var(sr_gt, dim=1).unsqueeze(1)
@@ -300,8 +343,6 @@ class train_sr_net_acc():
         
         if_std_loss = 0
         if if_std_loss:
-            # print('sr_gt_std -----> ',sr_gt_std.shape)
-            # print('sr_out_std -----> ',sr_out_std.shape)
             L1_loss_std = L1_pixelwise(sr_gt_std, sr_out_std)
             L2_loss_std = L2_pixelwise(sr_gt_std, sr_out_std)
             final_loss = final_loss+L1_loss_std+L2_loss_std
@@ -310,8 +351,6 @@ class train_sr_net_acc():
         if if_mean_loss:
             sr_gt_mean = torch.mean(sr_gt, dim=1).unsqueeze(1)
             sr_out_mean = torch.mean(sr_out, dim=1).unsqueeze(1)
-            # print('sr_gt_mean -----> ',sr_gt_mean.shape)
-            # print('sr_out_mean -----> ',sr_out_mean.shape)
             L1_loss_mean = L1_pixelwise(sr_gt-sr_gt_mean, sr_out-sr_out_mean)
             L2_loss_mean = L2_pixelwise(sr_gt-sr_gt_mean, sr_out-sr_out_mean)
             final_loss = final_loss+L1_loss_mean+L2_loss_mean
@@ -319,12 +358,10 @@ class train_sr_net_acc():
         self.if_D = 0
         if self.if_D:
             out_D = self.D_net(sr_out)
-            # print('out_D -----> ',out_D.shape) 
             cuda = True if torch.cuda.is_available() else False
             Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
             gt_label = Variable(Tensor(out_D.shape).fill_(1.0), requires_grad=False)
             out_label = Variable(Tensor(out_D.shape).fill_(0.0), requires_grad=False)
-            # print('out_D -----> ',out_D.shape, gt_label.shape)
             loss_G_D = self.BCELoss_function(out_D, gt_label) 
             final_loss = final_loss+loss_G_D*0.01
 
@@ -335,27 +372,27 @@ class train_sr_net_acc():
             loss_D = loss_gt_D + loss_out_D
         if not self.if_D:
             loss_D = final_loss
-        #####################################################
-        return final_loss ,loss_D #, sr_gt_std, sr_out_std
+        return final_loss, loss_D 
     
 
     #########################################################################
     #########################################################################
     def train(self):
+        """
+        Execute the main training loop for the SR network.
+
+        Iterates through epochs and batches, performing forward passes, 
+        calculating losses, and executing backpropagation using automatic 
+        mixed precision (AMP). Periodically saves visualizations and 
+        checkpoints.
+        """
         scaler = torch.cuda.amp.GradScaler()
         per_epoch_len = len(self.name_list)
-        # L1_pixelwise = torch.nn.L1Loss()
-        # L2_pixelwise = torch.nn.MSELoss()
-        # L1_pixelwise.cuda()
-        # L2_pixelwise.cuda()
         self.BCELoss_function = torch.nn.BCEWithLogitsLoss()
         self.BCELoss_function.cuda()
 
         prev_time = time.time()
-        ########################################################################################################################
-        # torch.multiprocessing.set_start_method('spawn')
         sub_img_size = self.SR_sub_img_size
-        ########################################################################################################################
         time_start=time.time()
         
         for epoch in range(0, self.SR_n_epochs):
@@ -371,50 +408,29 @@ class train_sr_net_acc():
                 sr_in, sr_gt = self.get_SR_inputGT(input)
                 sr_in = sr_in.half()
                 sr_gt = sr_gt.half()
-                ####################################################################################################################  
-                # time.sleep(1000)
-                # sr_in = sr_in.half()
-                # sr_gt = sr_gt.half()
-                # print('input -----> ', input.cpu().detach().numpy().max(), input.cpu().detach().numpy().min(),
-                # 'sr_in -----> ', sr_in.cpu().detach().numpy().max(), sr_in.cpu().detach().numpy().min(),
-                # 'sr_gt -----> ', sr_gt.cpu().detach().numpy().max(), sr_gt.cpu().detach().numpy().min())
+
                 with autocast():
                     sr_out, sr_out_da = self.SR_net(sr_in, self.up_rate)
-                # print('sr_gt shape -----> ',sr_gt.size())
-                # print('sr_in shape -----> ',sr_in.size())
-                # print('sr_out shape -----> ',sr_out.size()) , xf2_out, xf3_out
-                ####################################################################################################################  
-                # L1_loss_sr = L1_pixelwise(sr_gt, sr_out)
-                # L2_loss_sr = L2_pixelwise(sr_gt, sr_out)
-                # , loss_D, sr_gt_std, sr_out_std #L1_loss_sr + L2_loss_sr
 
                 loss_sr, loss_D = self.all_loss(sr_gt, sr_out) 
                 loss_mask_out, loss_mask_out_D = self.all_loss(sr_gt, sr_out_da)  
-                # loss_xf1 = self.all_loss(sr_gt, xf1_out)  
-                # loss_xf2 = self.all_loss(sr_gt, xf2_out)  
-                # loss_xf3 = self.all_loss(sr_gt, xf3_out)  
-                ################################################################################################################
-                # with torch.autograd.set_detect_anomaly(True):
+
                 self.optimizer.zero_grad()
-                Total_loss = loss_sr + loss_mask_out # + loss_xf1 # + loss_xf2 + loss_xf3
-                # print(Total_loss)
-                # Total_loss.half().backward()
-                # self.optimizer.step()
+                Total_loss = loss_sr + loss_mask_out 
+
                 scaler.scale(Total_loss).backward()
                 scaler.step(self.optimizer)
                 scaler.update()
 
-                # self. = 0
                 if self.if_D:
                     self.optimizer_D.zero_grad() 
-                    # All_loss_D =                            
                     loss_D.backward()                                   
                     self.optimizer_D.step() 
-                ################################################################################################################
+                
                 batches_done = epoch * per_epoch_len + index + 1
                 batches_left = self.SR_n_epochs * per_epoch_len - batches_done
                 time_left = datetime.timedelta(seconds=batches_left/batches_done * (time.time() - prev_time))
-                ################################################################################################################
+                
                 if index%(100//self.SR_batch_size) == 0:
                     time_end=time.time()
                     print_head = self.task_type.upper()+'_SR_TRAIN'
@@ -429,21 +445,11 @@ class train_sr_net_acc():
                     )
                     print_body_color = UseStyle(print_body, fore  = 'blue')
                     sys.stdout.write("\r  "+print_head_color+print_body_color)
-                ################################################################################################################
+                
                 if (index+1)%(self.SR_train_datasets_size//2//self.SR_batch_size) == 0:
-                    # self.SR_train_datasets_size//2//self.SR_batch_size
                     norm_factor = self.SR_norm_factor
                     image_name = input_name
 
-                    '''
-                    if self.SR_out_c>1:
-                        save_img_train(sr_gt_std, self.SR_output_path, epoch, index, input_name, norm_factor, 'sr_gt_std')
-                        save_img_train(sr_out_std, self.SR_output_path, epoch, index, input_name, norm_factor, 'sr_out_std')
-
-                    print('END input -----> ', input.cpu().detach().numpy().max(), input.cpu().detach().numpy().min(),
-                    'sr_in -----> ', sr_in.cpu().detach().numpy().max(), sr_in.cpu().detach().numpy().min(),
-                    'sr_gt -----> ', sr_gt.cpu().detach().numpy().max(), sr_gt.cpu().detach().numpy().min())
-                    '''
                     save_img_train(sr_in, self.SR_output_path, epoch, index, input_name, norm_factor, 'sr_in')
                     save_img_train(sr_gt, self.SR_output_path, epoch, index, input_name, norm_factor, 'sr_gt')
                     save_img_train(sr_out, self.SR_output_path, epoch, index, input_name, norm_factor, 'sr_out')
@@ -458,18 +464,23 @@ class train_sr_net_acc():
                 torch.save(self.D_net.state_dict(), self.SR_pth_save_path +'//'+ self.task_type+'_D_' + str(epoch) + '.pth')
 
 
-    
     #########################################################################
     #########################################################################
     def run(self):
+        """
+        Main execution flow for the training wrapper.
+
+        Sequentially initializes the model, generates patches for training, 
+        and starts the training loop.
+        """
         self.initialize_model()
         self.generate_patch()
         self.train()
 
 
 if __name__ == '__main__':
-    SR_parameters={ 'task_type':'signal',  # signal mean
-                    'net_type':'ps',  # ps trans_mini2
+    SR_parameters={ 'task_type':'signal',  
+                    'net_type':'ps',  
                     'if_D':0,
                     'GPU':'1',
                     'SR_n_epochs':2000,
@@ -490,7 +501,7 @@ if __name__ == '__main__':
                     ############################
                     'SR_norm_factor':10,
                     'SR_output_dir':'./results',
-                    'SR_datasets_folder':'NA_0.03_depthrange_200_n_1.00_res_0.8_expanded_soma_1.2_train/mov_w_bg',  # _only1
+                    'SR_datasets_folder':'NA_0.03_depthrange_200_n_1.00_res_0.8_expanded_soma_1.2_train/mov_w_bg',  
                     ############################
                     'SR_datasets_path':'..//datasets',
                     'SR_pth_path':'pth',
@@ -504,8 +515,7 @@ if __name__ == '__main__':
                     ############################
                     'SR_sample_up':15,
                     'SR_sample_down':3,
-                    'SR_input_pretype':'mean' ,} # 'mean'
+                    'SR_input_pretype':'mean' ,} 
 
     SR_model = train_sr_net_acc(SR_parameters)
     SR_model.run()
-
