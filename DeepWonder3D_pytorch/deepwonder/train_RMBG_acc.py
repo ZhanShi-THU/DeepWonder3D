@@ -24,6 +24,23 @@ import sys
 ########################################################################################################
 class train_rmbg_net_acc():
     def __init__(self, RMBG_para):
+        """
+        Training wrapper for the 3D background removal (RMBG) network.
+
+        This class configures a 3D UNet-based RMBG model, builds training
+        datasets and loaders, runs the optimization loop, periodically saves
+        intermediate visualizations, and writes model checkpoints and
+        configuration to disk.
+
+        Args:
+            RMBG_para (dict): Configuration dictionary for training. Common
+                keys:
+                - ``GPU``: Comma-separated GPU indices.
+                - ``RMBG_n_epochs``, ``RMBG_batch_size``: Training schedule.
+                - ``RMBG_img_*``: 3D patch size.
+                - ``RMBG_output_dir`` and dataset-related paths/folders.
+                - ``RMBG_use_pretrain`` and pretrain-related fields.
+        """
         self.GPU = '0,1'
         self.RMBG_n_epochs = 100
         self.RMBG_batch_size = 4
@@ -69,6 +86,12 @@ class train_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def make_folder(self):
+        """
+        Create output and checkpoint folders for RMBG training.
+
+        Uses timestamped subdirectories under ``RMBG_output_dir`` and
+        ``RMBG_pth_path`` to store logs, sample outputs, and model weights.
+        """
         current_time = 'RMBG_'+self.RMBG_net_type+'_'+datetime.datetime.now().strftime("%Y%m%d%H%M")
         self.RMBG_output_path = self.RMBG_output_dir + '/' + current_time
         if not os.path.exists(self.RMBG_output_dir): 
@@ -86,6 +109,18 @@ class train_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def reset_para(self, RMBG_para):
+        """
+        Reset instance attributes from parameter dictionary and optional pretrain YAML.
+
+        First updates attributes based on ``RMBG_para`` (if attributes exist),
+        then, when ``RMBG_use_pretrain`` is enabled and the pretrain YAML is
+        available, overrides core model hyperparameters to match the
+        pretraining configuration.
+
+        Args:
+            RMBG_para (dict): Parameter dictionary including training and
+                dataset options.
+        """
         for key, value in RMBG_para.items():
             if hasattr(self, key):
                 setattr(self, key, value)
@@ -108,6 +143,13 @@ class train_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def save_para(self):
+        """
+        Save RMBG training configuration to YAML and TXT files.
+
+        Serializes the current instance attributes (excluding networks and
+        optimizers) to YAML and TXT files in both the main output folder and
+        the checkpoint folder for reproducibility.
+        """
         yaml_dict = self.__dict__.copy()
         del yaml_dict['RMBG_net'] 
         del yaml_dict['optimizer_G'] 
@@ -128,6 +170,14 @@ class train_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def initialize_model(self):
+        """
+        Initialize the RMBG model, loss functions, and optimizer.
+
+        Constructs the 3D UNet model according to ``RMBG_net_type`` and
+        channel configuration, moves it to GPUs, optionally loads a pretrained
+        checkpoint, initializes the Adam optimizer, and saves configuration
+        via ``save_para``.
+        """
         GPU_list = self.GPU
         os.environ["CUDA_VISIBLE_DEVICES"] = GPU_list #str(opt.GPU)
 
@@ -165,11 +215,28 @@ class train_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def generate_patch(self):
+        """
+        Build training patch metadata for RMBG.
+
+        Uses ``train_preprocess_lessMemory_RMBG`` to obtain:
+        - ``name_list``: list of volume IDs.
+        - ``coor_list``: patch coordinates per volume.
+        - ``GT_list``: ground-truth (background-free) patches.
+        - ``raw_list``: raw input patches.
+        """
         self.name_list, self.coor_list, self.GT_list, self.raw_list = train_preprocess_lessMemory_RMBG(self)
 
     #########################################################################
     #########################################################################
     def train(self):
+        """
+        Run the RMBG training loop.
+
+        For each epoch it iterates over training patches, computes L1 and L2
+        reconstruction losses between network output and ground truth, updates
+        the generator network, prints progress, periodically saves sample
+        input/GT/output images, and finally writes model checkpoints.
+        """
         Tensor = torch.cuda.FloatTensor
         per_epoch_len = len(self.name_list)
         L1_pixelwise = torch.nn.L1Loss()

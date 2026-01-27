@@ -32,6 +32,24 @@ from deepwonder.utils import save_img_train, save_para_dict, UseStyle, save_img,
 
 class test_DENO_net:
     def __init__(self, DENO_para):
+        """
+        Testing wrapper for the 3D denoising (DENO) network.
+
+        This class configures a pretrained 3D UNet denoiser, prepares
+        overlapping patches from noisy volumes, runs inference patch by patch,
+        and stitches the denoised patches back into full-size volumes.
+
+        Args:
+            DENO_para (dict): Configuration dictionary for testing. Typical
+                keys:
+                - ``GPU``: Comma-separated GPU indices.
+                - ``DENO_output_dir`` / ``DENO_output_folder``: Output paths.
+                - ``DENO_datasets_path`` / ``DENO_datasets_folder``: Input
+                  data root and folder.
+                - ``DENO_img_*`` and ``DENO_gap_*``: Patch size and overlap.
+                - ``DENO_pth_path``, ``DENO_model``, ``DENO_pth_index``:
+                  Pretrained checkpoint location.
+        """
         self.GPU = '0,1'
         self.DENO_output_dir = './/test_results'
         self.DENO_output_folder = ''
@@ -67,6 +85,12 @@ class test_DENO_net:
     #########################################################################
     #########################################################################
     def make_folder(self):
+        """
+        Create output folder for DENO test results if it does not exist.
+
+        The folder path is built from ``DENO_output_dir`` and
+        ``DENO_output_folder`` and stored in ``self.DENO_output_path``.
+        """
         current_time = 'DENO_' + self.DENO_datasets_folder + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M")
         self.DENO_output_path = self.DENO_output_dir + '//' + self.DENO_output_folder
         # current_time.replace('//','_')
@@ -78,6 +102,13 @@ class test_DENO_net:
     #########################################################################
     #########################################################################
     def save_para(self):
+        """
+        Save DENO testing configuration to YAML and TXT files.
+
+        The method writes the current instance attributes (excluding the
+        network instance) into a YAML and a text file inside
+        ``self.DENO_output_path`` for reproducibility.
+        """
         yaml_dict = self.__dict__.copy()
         del yaml_dict['DENO_net']
         # del yaml_dict['optimizer'] 
@@ -93,6 +124,17 @@ class test_DENO_net:
     #########################################################################
     #########################################################################
     def reset_para(self, DENO_para):
+        """
+        Reset instance attributes from parameter dictionary and optional model YAML.
+
+        First updates attributes from ``DENO_para`` (if attributes exist on
+        the instance). If the model YAML exists, it overrides normalization,
+        channels, and input preprocessing options.
+
+        Args:
+            DENO_para (dict): Parameter dictionary provided by the caller to
+                override default values (paths, patch sizes, GPU indices, etc.).
+        """
         for key, value in DENO_para.items():
             if hasattr(self, key):
                 setattr(self, key, value)
@@ -115,6 +157,15 @@ class test_DENO_net:
     #########################################################################
     #########################################################################
     def initialize_model(self):
+        """
+        Initialize the DENO network and load pretrained weights.
+
+        Builds the 3D UNet denoiser, wraps it in ``torch.nn.DataParallel``,
+        moves it to GPU (if configured), loads the checkpoint specified by
+        ``DENO_pth_index`` and ``DENO_model``, handling both with and without
+        'module.' prefixes in the state dict keys, and finally saves the
+        configuration via ``save_para``.
+        """
         self.DENO_net = Network_3D_Unet(UNet_type='3DUNet',
                                         in_channels=self.DENO_in_c,
                                         out_channels=self.DENO_out_c,
@@ -174,6 +225,17 @@ class test_DENO_net:
     #########################################################################
     #########################################################################
     def generate_patch(self):
+        """
+        Prepare metadata for patch-wise DENO inference.
+
+        Depending on ``self.data_process_lm``, this uses low-memory
+        preprocessing utilities to construct:
+        - ``name_list``: list of volume IDs.
+        - ``patch_name_list``: mapping from volume ID to patch IDs.
+        - ``img_dir_list`` or ``img_list``: mapping from volume ID to image
+          file path or loaded array.
+        - ``coordinate_list``: mapping from volume ID to patch coordinates.
+        """
         self.data_process_lm = 1
         if not self.data_process_lm:
             self.name_list, self.patch_name_list, self.img_list, self.coordinate_list \
@@ -186,6 +248,13 @@ class test_DENO_net:
     #########################################################################
     #########################################################################
     def test(self):
+        """
+        Run denoising inference over the full test dataset and save outputs.
+
+        Iterates through all volumes, builds a blank denoised volume, applies
+        the DENO network to overlapping patches, stitches the outputs back
+        into the full volume, and writes the denoised volume to disk.
+        """
         # torch.multiprocessing.set_start_method('spawn')
         prev_time = time.time()
         iteration_num = 0
@@ -245,8 +314,10 @@ class test_DENO_net:
                 if if_print_gpu_use:
                     from deepwonder.utils import get_gpu_mem_info
                     gpu_mem_total, gpu_mem_used, gpu_mem_free = get_gpu_mem_info(gpu_id=0)
-                    print(r'当前显卡显存使用情况：总共 {} MB， 已经使用 {} MB， 剩余 {} MB'
-                          .format(gpu_mem_total, gpu_mem_used, gpu_mem_free))
+                    print(
+                        r'GPU memory usage: total {} MB, used {} MB, free {} MB'
+                        .format(gpu_mem_total, gpu_mem_used, gpu_mem_free)
+                    )
                 ################################################################################################################
                 per_epoch_len = len(per_coor_list) // self.DENO_batch_size
                 batches_done = im_index * per_epoch_len + iteration + 1

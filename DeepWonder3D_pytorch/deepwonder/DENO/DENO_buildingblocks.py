@@ -4,27 +4,53 @@ from torch.nn import functional as F
 
 
 def conv3d(in_channels, out_channels, kernel_size, bias, padding=1):
+    """
+    Create a 3D convolution layer.
+    
+    Wrapper function for creating a PyTorch 3D convolution layer with specified
+    parameters.
+    
+    Args:
+        in_channels (int): Number of input channels
+        out_channels (int): Number of output channels
+        kernel_size (int or tuple): Size of the convolving kernel
+        bias (bool): Whether to add a learnable bias to the output
+        padding (int, optional): Zero-padding added to both sides of the input.
+            Default is 1.
+    
+    Returns:
+        nn.Conv3d: 3D convolution layer module
+    """
     return nn.Conv3d(in_channels, out_channels, kernel_size, padding=padding, bias=bias)
 
 
 def create_conv(in_channels, out_channels, kernel_size, order, num_groups, padding=1):
     """
-    Create a list of modules with together constitute a single conv layer with non-linearity
-    and optional batchnorm/groupnorm.
+    Create a list of modules that together constitute a single convolution layer
+    with non-linearity and optional batch normalization or group normalization.
 
     Args:
-        in_channels (int): number of input channels
-        out_channels (int): number of output channels
-        order (string): order of things, e.g.
+        in_channels (int): Number of input channels
+        out_channels (int): Number of output channels
+        kernel_size (int or tuple): Size of the convolving kernel
+        order (str): Order of operations, e.g.:
             'cr' -> conv + ReLU
             'crg' -> conv + ReLU + groupnorm
             'cl' -> conv + LeakyReLU
             'ce' -> conv + ELU
-        num_groups (int): number of groups for the GroupNorm
-        padding (int): add zero-padding to the input
+            'cge' -> conv + groupnorm + ELU
+            'cbe' -> conv + batchnorm + ELU
+        num_groups (int): Number of groups for GroupNorm
+        padding (int, optional): Zero-padding added to the input. Default is 1.
 
-    Return:
-        list of tuple (name, module)
+    Returns:
+        list: List of tuples (name, module) representing the layer components
+
+    Note:
+        - 'c' (convolution) must be present in the order string
+        - Non-linearity ('r', 'l', 'e') cannot be the first operation
+        - GroupNorm must come after convolution
+        - If out_channels < num_groups, num_groups is automatically adjusted
     """
     assert 'c' in order, "Conv layer MUST be present"
     assert order[0] not in 'rle', 'Non-linearity cannot be the first operation in the layer'
@@ -80,6 +106,17 @@ class SingleConv(nn.Sequential):
     """
 
     def __init__(self, in_channels, out_channels, kernel_size=3, order='cr', num_groups=8, padding=1):
+        """
+        Initialize SingleConv module.
+
+        Args:
+            in_channels (int): Number of input channels
+            out_channels (int): Number of output channels
+            kernel_size (int, optional): Size of the convolving kernel. Default is 3.
+            order (str, optional): Determines the order of layers. Default is 'cr'.
+            num_groups (int, optional): Number of groups for GroupNorm. Default is 8.
+            padding (int, optional): Zero-padding added to the input. Default is 1.
+        """
         super(SingleConv, self).__init__()
 
         for name, module in create_conv(in_channels, out_channels, kernel_size, order, num_groups, padding=padding):
@@ -109,6 +146,17 @@ class DoubleConv(nn.Sequential):
     """
 
     def __init__(self, in_channels, out_channels, encoder, kernel_size=3, order='cr', num_groups=8):
+        """
+        Initialize DoubleConv module.
+
+        Args:
+            in_channels (int): Number of input channels
+            out_channels (int): Number of output channels
+            encoder (bool): If True, we're in the encoder path; otherwise in decoder
+            kernel_size (int, optional): Size of the convolving kernel. Default is 3.
+            order (str, optional): Determines the order of layers. Default is 'cr'.
+            num_groups (int, optional): Number of groups for GroupNorm. Default is 8.
+        """
         super(DoubleConv, self).__init__()
         if encoder:
             # we're in the encoder path
@@ -142,6 +190,17 @@ class ExtResNetBlock(nn.Module):
     """
 
     def __init__(self, in_channels, out_channels, kernel_size=3, order='cge', num_groups=8, **kwargs):
+        """
+        Initialize ExtResNetBlock module.
+
+        Args:
+            in_channels (int): Number of input channels
+            out_channels (int): Number of output channels
+            kernel_size (int, optional): Size of the convolving kernel. Default is 3.
+            order (str, optional): Determines the order of layers. Default is 'cge'.
+            num_groups (int, optional): Number of groups for GroupNorm. Default is 8.
+            **kwargs: Additional keyword arguments (not used, for compatibility)
+        """
         super(ExtResNetBlock, self).__init__()
 
         # first convolution
@@ -164,6 +223,15 @@ class ExtResNetBlock(nn.Module):
             self.non_linearity = nn.ReLU(inplace=True)
 
     def forward(self, x):
+        """
+        Forward pass through the ExtResNetBlock.
+
+        Args:
+            x (torch.Tensor): Input tensor with shape (batch, in_channels, D, H, W)
+
+        Returns:
+            torch.Tensor: Output tensor with shape (batch, out_channels, D, H, W)
+        """
         # apply first convolution and save the output as a residual
         out = self.conv1(x)
         residual = out
@@ -201,6 +269,20 @@ class Encoder(nn.Module):
     def __init__(self, in_channels, out_channels, conv_kernel_size=3, apply_pooling=True,
                  pool_kernel_size=(2, 2, 2), pool_type='max', basic_module=DoubleConv, conv_layer_order='cr',
                  num_groups=8):
+        """
+        Initialize Encoder module.
+
+        Args:
+            in_channels (int): Number of input channels
+            out_channels (int): Number of output channels
+            conv_kernel_size (int, optional): Size of the convolving kernel. Default is 3.
+            apply_pooling (bool, optional): If True, use MaxPool3d before DoubleConv. Default is True.
+            pool_kernel_size (tuple, optional): Size of the pooling window. Default is (2, 2, 2).
+            pool_type (str, optional): Type of pooling: 'max' or 'avg'. Default is 'max'.
+            basic_module (nn.Module, optional): Either ResNetBlock or DoubleConv. Default is DoubleConv.
+            conv_layer_order (str, optional): Determines the order of layers. Default is 'cr'.
+            num_groups (int, optional): Number of groups for GroupNorm. Default is 8.
+        """
         super(Encoder, self).__init__()
         assert pool_type in ['max', 'avg']
         if apply_pooling:
@@ -218,6 +300,16 @@ class Encoder(nn.Module):
                                          num_groups=num_groups)
 
     def forward(self, x):
+        """
+        Forward pass through the Encoder module.
+
+        Args:
+            x (torch.Tensor): Input tensor with shape (batch, in_channels, D, H, W)
+
+        Returns:
+            torch.Tensor: Output tensor with shape (batch, out_channels, D', H', W')
+                where D', H', W' are reduced by pooling if apply_pooling is True
+        """
         if self.pooling is not None:
             x = self.pooling(x)
         x = self.basic_module(x)
@@ -244,6 +336,18 @@ class Decoder(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size=3,
                  scale_factor=(2, 2, 2), basic_module=DoubleConv, conv_layer_order='cr', num_groups=8):
+        """
+        Initialize Decoder module.
+
+        Args:
+            in_channels (int): Number of input channels
+            out_channels (int): Number of output channels
+            kernel_size (int, optional): Size of the convolving kernel. Default is 3.
+            scale_factor (tuple, optional): Multiplier for upsampling. Default is (2, 2, 2).
+            basic_module (nn.Module, optional): Either ResNetBlock or DoubleConv. Default is DoubleConv.
+            conv_layer_order (str, optional): Determines the order of layers. Default is 'cr'.
+            num_groups (int, optional): Number of groups for GroupNorm. Default is 8.
+        """
         super(Decoder, self).__init__()
         if basic_module == DoubleConv:
             # if DoubleConv is the basic_module use nearest neighbor interpolation for upsampling
@@ -270,6 +374,19 @@ class Decoder(nn.Module):
                                          num_groups=num_groups)
 
     def forward(self, encoder_features, x):
+        """
+        Forward pass through the Decoder module.
+
+        Args:
+            encoder_features (torch.Tensor): Features from corresponding encoder
+                path for skip connection, shape (batch, channels, D, H, W)
+            x (torch.Tensor): Input tensor from previous decoder layer,
+                shape (batch, in_channels, D', H', W')
+
+        Returns:
+            torch.Tensor: Output tensor with shape (batch, out_channels, D, H, W)
+                where D, H, W match encoder_features dimensions
+        """
         if self.upsample is None:
             # use nearest neighbor interpolation and concatenation joining
             output_size = encoder_features.size()[2:]
@@ -304,6 +421,16 @@ class FinalConv(nn.Sequential):
     """
 
     def __init__(self, in_channels, out_channels, kernel_size=3, order='cr', num_groups=8):
+        """
+        Initialize FinalConv module.
+
+        Args:
+            in_channels (int): Number of input channels
+            out_channels (int): Number of output channels
+            kernel_size (int, optional): Size of the convolving kernel. Default is 3.
+            order (str, optional): Determines the order of layers. Default is 'cr'.
+            num_groups (int, optional): Number of groups for GroupNorm. Default is 8.
+        """
         super(FinalConv, self).__init__()
 
         # conv1

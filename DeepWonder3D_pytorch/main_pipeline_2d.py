@@ -16,18 +16,35 @@ import sys
 import gc
 
 
-def clear_large_variables(threshold=1 * 1024 * 1024):  # 默认阈值为1MB
-    # 获取所有全局变量的名称和值
-    global_vars = globals().copy()  # 使用.copy()以避免在迭代时修改字典
+def clear_large_variables(threshold=1 * 1024 * 1024):
+    """
+    Delete large global variables whose size exceeds a given threshold.
+
+    This helper scans the global namespace, removes variables larger than
+    ``threshold`` bytes based on ``sys.getsizeof``, and then triggers garbage
+    collection to free memory.
+
+    Args:
+        threshold (int, optional): Size threshold in bytes for deleting
+            variables. Defaults to ``1 * 1024 * 1024`` (approximately 1 MB).
+
+    Returns:
+        None: Variables are removed in place from the global namespace.
+
+    Notes:
+        - ``sys.getsizeof`` is used as a size estimate and may underestimate
+          memory usage for complex objects.
+        - Only variables in the module-level global namespace are considered.
+        - This function is primarily intended for long-running pipelines that
+          work with large intermediate arrays or tensors.
+    """
+    # copy globals() to avoid mutating the dictionary while iterating
+    global_vars = globals().copy()
     for var_name, var_value in global_vars.items():
-        # 获取变量的大小
         size_in_bytes = sys.getsizeof(var_value)
-        # 检查是否大于阈值
         if size_in_bytes > threshold:
-            # 删除变量
             del globals()[var_name]
             print(f"Variable '{var_name}' of size {size_in_bytes} bytes has been deleted.")
-    # 执行垃圾收集
     gc.collect()
     print("Garbage collection completed.")
 
@@ -40,6 +57,52 @@ def main_pipeline(input_path,
                   t_resolution=10,
                   type='deno_sr_rmbg_seg_mn',
                   denoise_index=0):
+    """
+    Run the full 2D processing pipeline for neuronal imaging data.
+
+    This function orchestrates denoising (DENO), temporal resolution adjustment
+    (TR), super-resolution reconstruction (SR), background removal (RMBG),
+    segmentation (SEG), and neuron merging (MN) in a configurable sequence.
+
+    Args:
+        input_path (str): Base directory that contains the raw input dataset
+            folders (e.g. ``'./data'`` or ``'/path/to/input'``).
+        input_folder (str): Name of the folder inside ``input_path`` that
+            stores the raw imaging data.
+        SR_up_rate (int or float): Upsampling factor used by the SR module,
+            typically a positive integer or decimal such as 2, 4, 8.
+        GPU_index (str): Comma-separated GPU index string, for example
+            ``'0'`` or ``'0,1'``.
+        output_dir (str): Directory where all intermediate results and final
+            outputs of the pipeline will be stored.
+        t_resolution (int, optional): Target temporal resolution (in the same
+            time unit as expected by ``adjust_time_resolution``). If different
+            from the default and ``'tr'`` is present in ``type``, the temporal
+            resampling step is executed.
+        type (str, optional): Pipeline step selector string, default
+            ``'deno_sr_rmbg_seg_mn'``. The presence of the following
+            substrings controls which stages are executed:
+            - ``'deno'``: run denoising.
+            - ``'tr'``: adjust temporal resolution.
+            - ``'sr'``: run super-resolution.
+            - ``'rmbg'``: remove background.
+            - ``'seg'``: run segmentation.
+            - ``'mn'``: merge neuron instances.
+        denoise_index (int, optional): Index used to select a particular
+            denoising model variant or configuration; non-negative integer.
+
+    Returns:
+        None: All results are written to subfolders under ``output_dir``.
+
+    Notes:
+        - Steps are executed sequentially and each step reads the output of the
+          previous one.
+        - After each heavy step, CUDA cache and large global variables are
+          cleared to reduce memory usage.
+        - Steps that are not listed in ``type`` are skipped.
+        - This 2D pipeline does not include the view-merging (VM) stage used
+          in the 3D variant.
+    """
     NOW_path = input_path
     NOW_folder = input_folder
     ############ DENO #########################################

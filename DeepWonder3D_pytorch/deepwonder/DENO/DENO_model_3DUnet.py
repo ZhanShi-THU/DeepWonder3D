@@ -8,8 +8,29 @@ from deepwonder.DENO.DENO_utils import create_feature_maps
 
 
 class UNet3D(nn.Module):
+    """
+    3D U-Net architecture for volumetric image processing.
+
+    Implements a 3D U-Net with encoder-decoder structure, skip connections,
+    and optional final activation. Designed for tasks such as denoising,
+    segmentation, or super-resolution on 3D image volumes.
+    """
     def __init__(self, in_channels, out_channels, final_sigmoid, f_maps=64, layer_order='cr', num_groups=8,
                  **kwargs):
+        """
+        Initialize the 3D U-Net model.
+
+        Args:
+            in_channels (int): Number of input channels
+            out_channels (int): Number of output channels
+            final_sigmoid (bool): Whether to apply sigmoid activation at the output.
+                If False, applies Softmax instead.
+            f_maps (int, optional): Number of feature maps in the first layer. Default is 64.
+            layer_order (str, optional): Order of operations in convolution layers.
+                Default is 'cr' (conv + ReLU).
+            num_groups (int, optional): Number of groups for GroupNorm. Default is 8.
+            **kwargs: Additional keyword arguments (for compatibility)
+        """
         super(UNet3D, self).__init__()
 
         f_maps_en = f_maps
@@ -52,6 +73,16 @@ class UNet3D(nn.Module):
             self.final_activation = nn.Softmax(dim=1)
 
     def forward(self, x):
+        """
+        Forward pass through the 3D U-Net.
+
+        Args:
+            x (torch.Tensor): Input tensor with shape (batch, in_channels, D, H, W)
+
+        Returns:
+            torch.Tensor: Output tensor with shape (batch, out_channels, D, H, W)
+                Dimensions are padded to be divisible by 8, then unpadded at the end
+        """
         # encoder part
         # print('x -----> ',x.shape)
         t, h, w = x.size()[-3:]

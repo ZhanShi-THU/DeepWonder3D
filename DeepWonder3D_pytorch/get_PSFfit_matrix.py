@@ -7,14 +7,32 @@ from scipy.io import savemat
 
 def psf_weighted_centroids_array(tiff_path):
     """
-    Read PSF tiff file and compute the weighted centroid (intensity-weighted)
-    for each frame. Return as a numpy array.
-
+    Read PSF TIFF file and compute intensity-weighted centroid for each frame.
+    
+    Calculates intensity-weighted centroids for each frame in the PSF image
+    sequence, used for subsequent PSF fitting and 3D localization.
+    
     Args:
-        tiff_path (str): Path to PSF tiff file
-
+        tiff_path (str): Path to PSF TIFF file
+            Format: String path, e.g., './psf_data/view_113.tif'
+            Meaning: TIFF file containing PSF image sequence, typically a 3D
+            stack (z-stack)
+    
     Returns:
-        centroids_array (np.ndarray): shape = (Nz, 2), each row is (y, x) float coordinates
+        centroids_array (np.ndarray): Array of centroid coordinates for each frame
+            Format: 2D float array with shape (Nz, 2)
+            Meaning: Each row is (y, x) coordinates in pixels
+            - Nz: Number of z-axis slices (frames)
+            - If total intensity of a frame is 0, corresponding position is
+              [np.nan, np.nan]
+    
+    Note:
+        - Uses intensity-weighted method to calculate centroid:
+          centroid = sum(position * intensity) / sum(intensity)
+        - If total intensity of a frame is 0 (completely black), centroid is
+          set to NaN
+        - Centroid coordinates use floats for sub-pixel precision
+        - Requires tifffile library for reading TIFF files
     """
     psf_stack = tifffile.imread(tiff_path)
     centroids = []
@@ -37,18 +55,47 @@ def psf_weighted_centroids_array(tiff_path):
 
 def compute_psf_fit(psf, all_z):
     """
-    Compute linear fitting parameters of centroid differences across views
-    at different depths.
-
+    Compute linear fitting parameters for centroid differences between views.
+    
+    Performs linear fitting on centroid position differences between views at
+    different depths to obtain PSF fitting matrix, used for subsequent 3D
+    localization and z-axis estimation.
+    
     Args:
-        psf : numpy.ndarray, shape (N_views, N_z, 2)
-            Centroid coordinates [x, y] for each view at each depth
-        all_z : numpy.ndarray, shape (N_z,)
-            Depth values
-
+        psf (np.ndarray): Centroid coordinates for each view at different depths
+            Format: 3D array with shape (N_views, N_z, 2)
+            Meaning:
+            - N_views: Number of views
+            - N_z: Number of z-axis depth slices
+            - Third dimension: [x, y] coordinates (Note: different order from
+              [y, x] returned by psf_weighted_centroids_array)
+        
+        all_z (np.ndarray): Z-axis depth values array
+            Format: 1D array with shape (N_z,)
+            Meaning: Depth value corresponding to each z-axis slice, units in
+            micrometers
+            Example: (np.arange(101) - 50) * 3 represents -150 to 150 um with
+            3 um step size
+    
     Returns:
-        psffit_matrix : numpy.ndarray, shape (N_views*(N_views-1), 6)
-            Each row is [i, j, ax, bx, ay, by]
+        psffit_matrix (np.ndarray): PSF fitting matrix
+            Format: 2D array with shape (N_views*(N_views-1), 6)
+            Meaning: Each row is [i, j, ax, bx, ay, by], representing fitting
+            parameters between views i and j
+            - i, j: View indices (integers)
+            - ax, bx: Linear fitting parameters for x-direction, satisfying
+              dx = ax * z + bx
+            - ay, by: Linear fitting parameters for y-direction, satisfying
+              dy = ay * z + by
+            Note: Only contains view pairs with i != j, total of
+            N_views*(N_views-1) rows
+    
+    Note:
+        - Uses numpy.polyfit for first-order linear fitting
+        - For each view pair (i, j), calculates position differences at
+          different depths, then fits as linear function of z
+        - Fitting results are used in subsequent 3D localization algorithms to
+          estimate neuron z-axis positions
     """
     N_views = psf.shape[0]
     psffit_matrix = []

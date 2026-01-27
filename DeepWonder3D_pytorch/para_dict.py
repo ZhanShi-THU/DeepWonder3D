@@ -2,12 +2,57 @@ import numpy as np
 from collections import Counter
 
 def merge_dicts(dict1, dict2):
-    merged_dict = dict1.copy()  # 复制第一个字典，以免修改原始字典
-    merged_dict.update(dict2)  # 使用update()方法将第二个字典合并到第一个字典中
+    """
+    Merge two dictionaries with values from the second overriding the first.
+
+    This utility returns a new dictionary that contains all key-value pairs
+    from ``dict1`` and ``dict2``. When a key exists in both dictionaries,
+    the value from ``dict2`` is used.
+
+    Args:
+        dict1 (dict): Base dictionary whose keys and values will be included
+            unless overridden.
+        dict2 (dict): Dictionary whose keys and values override those in
+            ``dict1`` when keys overlap.
+
+    Returns:
+        dict: A new merged dictionary that combines ``dict1`` and ``dict2``.
+
+    Notes:
+        - The input dictionaries are not modified in place.
+        - Keys present only in one dictionary are simply copied over.
+    """
+    merged_dict = dict1.copy()
+    merged_dict.update(dict2)
     return merged_dict
 
 
 def get_data_fingerprint(data_path):
+    """
+    Collect basic shape statistics for all TIFF images in a folder.
+
+    The function scans a directory for ``.tif`` files, reads only the TIFF
+    headers to extract image width, height, and number of frames, and returns
+    both per-file lists and minimal values along each dimension.
+
+    Args:
+        data_path (str): Filesystem path to the directory containing TIFF
+            images (e.g. ``'./data/raw'`` or ``'/path/to/data'``).
+
+    Returns:
+        tuple: ``(im_w_list, im_h_list, im_s_list, min_im_w, min_im_h, min_im_s)`` where
+            - ``im_w_list`` (list[int]): Width of each image in pixels.
+            - ``im_h_list`` (list[int]): Height of each image in pixels.
+            - ``im_s_list`` (list[int]): Number of frames (depth) of each image.
+            - ``min_im_w`` (int): Minimal width among all images.
+            - ``min_im_h`` (int): Minimal height among all images.
+            - ``min_im_s`` (int): Minimal number of frames among all images.
+
+    Notes:
+        - Only files with ``.tif`` in their name are considered.
+        - ``tifffile.TiffFile`` is used to avoid loading full image data.
+        - Intended for determining common cropping or tiling sizes.
+    """
     im_w_list = []
     im_h_list = []
     im_s_list = []
@@ -39,6 +84,34 @@ def get_data_fingerprint(data_path):
 ############ DENO #########################################
 ###########################################################
 def config_DENO_para(DENO_para, DENO_path, GPU_M=48):
+    """
+    Configure denoising (DENO) parameters based on data size and GPU memory.
+
+    The function inspects TIFF data in ``DENO_path`` to determine minimal
+    spatial and temporal sizes, then adjusts the tiling size, batch size,
+    and overlap widths stored in ``DENO_para``.
+
+    Args:
+        DENO_para (dict): Parameter dictionary for the denoising module. It is
+            updated in-place with tiling-related entries such as
+            ``DENO_img_w``, ``DENO_img_h``, and ``DENO_batch_size``.
+        DENO_path (str): Filesystem path that points to the folder containing
+            the denoising input data.
+        GPU_M (int, optional): Approximate GPU memory in GB used to derive a
+            safe batch size. Defaults to ``48``.
+
+    Returns:
+        dict: The updated ``DENO_para`` dictionary with computed image size,
+        batch size, and overlap parameters.
+
+    Notes:
+        - Spatial sizes are rounded up to the next multiple of 32 and capped
+          at 256 pixels.
+        - Batch size is derived from a pre-defined GPU usage table and is at
+          least 1.
+        - Overlap settings (``DENO_gap_*``) are chosen to avoid seams between
+          tiles.
+    """
     im_w_list, im_h_list, im_s_list, \
     min_im_w, min_im_h, min_im_s \
     = get_data_fingerprint(DENO_path)
@@ -122,6 +195,32 @@ DENO_para = { 'GPU' : '0,1',
 ############ SR #########################################
 ###########################################################
 def config_SR_para(SR_para, SR_path, GPU_M=48):
+    """
+    Configure super-resolution (SR) parameters based on dataset size.
+
+    The function reads TIFF shapes from ``SR_path`` and sets the SR tile size,
+    overlap, and depth parameters stored in ``SR_para``.
+
+    Args:
+        SR_para (dict): Super-resolution parameter dictionary. This function
+            updates keys such as ``img_w``, ``img_h``, ``gap_w``, ``gap_h``,
+            and ``img_s``.
+        SR_path (str): Filesystem path to the dataset used for SR testing or
+            inference.
+        GPU_M (int, optional): Approximate GPU memory in GB (currently unused
+            but kept for API symmetry). Defaults to ``48``.
+
+    Returns:
+        dict: The updated ``SR_para`` dictionary with derived image tile and
+        overlap parameters.
+
+    Notes:
+        - The minimal spatial dimension is upsampled by ``SR_para['up_rate']``
+          and then rounded up to an internal multiple of 32 before being
+          scaled back down.
+        - The temporal window ``img_s`` is fixed to 5 frames in this
+          configuration.
+    """
     print('SR_path -----> ',SR_path)
     im_w_list, im_h_list, im_s_list, \
     min_im_w, min_im_h, min_im_s \
@@ -199,6 +298,31 @@ SR_para = { 'GPU' : '1',
 ############ RMBG #########################################
 ###########################################################
 def config_RMBG_para(RMBG_para, RMBG_path, GPU_M=48):
+    """
+    Configure background removal (RMBG) parameters from dataset statistics.
+
+    The function inspects TIFF data at ``RMBG_path`` and sets voxel size,
+    batch size, and overlap parameters in ``RMBG_para`` for the RMBG model.
+
+    Args:
+        RMBG_para (dict): Background-removal parameter dictionary. This
+            function updates keys such as ``RMBG_img_w``, ``RMBG_img_h``,
+            ``RMBG_img_s``, and related gaps and batch size.
+        RMBG_path (str): Filesystem path to the dataset used for RMBG
+            inference.
+        GPU_M (int, optional): Approximate GPU memory in GB, used to compute
+            a safe batch size. Defaults to ``48``.
+
+    Returns:
+        dict: The updated ``RMBG_para`` dictionary with configured 3D patch
+        and overlap sizes.
+
+    Notes:
+        - Spatial window width is fixed to 256 pixels and used for all
+          dimensions.
+        - Temporal depth is either half of the width or equal to the width,
+          depending on the chosen scale.
+    """
     print('RMBG_path ----> ',RMBG_path)
     im_w_list, im_h_list, im_s_list, \
     min_im_w, min_im_h, min_im_s \
@@ -274,6 +398,29 @@ RMBG_para = { 'GPU' : '0,1',
 ############ SEG #########################################
 ###########################################################
 def config_SEG_para(SEG_para, SEG_path, GPU_M=48):
+    """
+    Configure segmentation (SEG) parameters based on dataset size.
+
+    This function computes a default 2D tiling size and overlap for the SEG
+    model, and updates ``SEG_para`` accordingly.
+
+    Args:
+        SEG_para (dict): Segmentation parameter dictionary to be updated with
+            keys such as ``SEG_img_w``, ``SEG_img_h``, ``SEG_gap_w``,
+            ``SEG_gap_h``, and ``SEG_batch_size``.
+        SEG_path (str): Filesystem path to the segmentation input dataset.
+        GPU_M (int, optional): Approximate GPU memory in GB, used to compute
+            a safe batch size. Defaults to ``48``.
+
+    Returns:
+        dict: The updated ``SEG_para`` dictionary with image size, batch size,
+        and overlap parameters.
+
+    Notes:
+        - The spatial tile width is fixed to 256 pixels and reused for the
+          height.
+        - Overlaps subtract a fixed 32-pixel margin from both dimensions.
+    """
     im_w_list, im_h_list, im_s_list, \
     min_im_w, min_im_h, min_im_s \
     = get_data_fingerprint(SEG_path)

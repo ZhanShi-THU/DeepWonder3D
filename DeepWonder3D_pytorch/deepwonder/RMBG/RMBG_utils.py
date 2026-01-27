@@ -7,9 +7,53 @@ plt.switch_backend('agg')
 
 ########################################################################################################################
 def create_feature_maps(init_channel_number, number_of_fmaps):
+    """
+    Create a list of feature map channel numbers for U-Net architecture.
+
+    Generates exponentially increasing channel numbers starting from
+    init_channel_number, doubling at each level.
+
+    Args:
+        init_channel_number (int): Initial number of channels (base value)
+        number_of_fmaps (int): Number of feature map levels to generate
+
+    Returns:
+        list: List of channel numbers [init_channel_number, init_channel_number*2,
+            init_channel_number*4, ..., init_channel_number*2^(number_of_fmaps-1)]
+
+    Example:
+        create_feature_maps(64, 4) returns [64, 128, 256, 512]
+    """
     return [init_channel_number * 2 ** k for k in range(number_of_fmaps)]
 
 def save_yaml(opt, yaml_name):
+    """
+    Save training configuration parameters to a YAML file.
+
+    Extracts relevant parameters from the options object and saves them to a
+    YAML file for later reference or resuming training.
+
+    Args:
+        opt: Configuration object containing training parameters
+            Required attributes:
+            - n_epochs: Number of training epochs
+            - datasets_folder: Name of datasets folder
+            - GPU: GPU index string
+            - output_dir: Output directory path
+            - batch_size: Batch size for training
+            - img_s, img_w, img_h: Image dimensions (depth, width, height)
+            - gap_h, gap_w, gap_s: Gap sizes for patch extraction
+            - lr: Learning rate
+            - b1, b2: Adam optimizer beta parameters
+            - normalize_factor: Normalization factor for data
+            - fmap: Feature map configuration
+            - datasets_path: Path to datasets
+            - train_datasets_size: Size of training dataset
+        yaml_name (str): Path to output YAML file
+
+    Returns:
+        None: File is saved directly to disk
+    """
     para = {'n_epochs':0,
     'datasets_folder':0,
     'GPU':0,
@@ -48,6 +92,24 @@ def save_yaml(opt, yaml_name):
 
 
 def read_yaml(opt, yaml_name):
+    """
+    Read training configuration parameters from a YAML file.
+
+    Loads parameters from a YAML file and updates the options object with
+    the saved configuration values.
+
+    Args:
+        opt: Configuration object to update with loaded parameters
+        yaml_name (str): Path to input YAML file
+
+    Returns:
+        None: Parameters are loaded into the opt object
+
+    Note:
+        - Only certain parameters are loaded (n_epochs, output_dir, batch_size,
+          lr, fmap, b1, b2, normalize_factor)
+        - Other parameters remain unchanged
+    """
     with open(yaml_name) as f:
         para = yaml.load(f, Loader=yaml.FullLoader)
         print(para)
@@ -69,6 +131,35 @@ def read_yaml(opt, yaml_name):
 
 
 def name2index(opt, input_name, num_h, num_w, num_s):
+    """
+    Convert patch filename to spatial indices and calculate patch coordinates.
+
+    Parses a patch filename to extract x, y, z indices and calculates the
+    corresponding coordinates in the full image stack and within the patch,
+    accounting for overlap regions (gaps).
+
+    Args:
+        opt: Configuration object containing:
+            - img_w, img_h, img_s: Patch dimensions (width, height, depth)
+            - gap_w, gap_h, gap_s: Gap sizes for overlap regions
+        input_name (str): Patch filename in format "..._x{idx}_y{idx}_z{idx}"
+            Example: "patch_x5_y3_z10"
+        num_h (int): Total number of patches in height dimension
+        num_w (int): Total number of patches in width dimension
+        num_s (int): Total number of patches in depth dimension
+
+    Returns:
+        tuple: 12 integers representing coordinates:
+            (stack_start_w, stack_end_w, patch_start_w, patch_end_w,
+             stack_start_h, stack_end_h, patch_start_h, patch_end_h,
+             stack_start_s, stack_end_s, patch_start_s, patch_end_s)
+            - stack_*: Coordinates in the full image stack
+            - patch_*: Coordinates within the patch (accounting for overlap)
+
+    Note:
+        - Edge patches (index 0 or max) have different overlap handling
+        - Middle patches use cut_w/h/s to account for overlap regions
+    """
     # print(input_name)
     name_list = input_name.split('_')
     # print(name_list)
@@ -141,6 +232,30 @@ def name2index(opt, input_name, num_h, num_w, num_s):
 
 
 def FFDrealign4(input):
+    """
+    Realign 4D tensor for 4-way FFD (Free-Form Deformation) processing.
+
+    Rearranges spatial dimensions by splitting each spatial location into
+    4 sub-locations (2x2 grid), increasing channels by 4x and reducing
+    spatial dimensions by 2x in height and width.
+
+    Args:
+        input (torch.Tensor): Input tensor with shape
+            (batch, channels, time, height, width)
+
+    Returns:
+        torch.Tensor: Realigned tensor with shape
+            (batch, channels*4, time, height/2, width/2)
+            The 4 sub-locations are arranged as:
+            - Channel 0: even rows, even columns
+            - Channel 1: even rows, odd columns
+            - Channel 2: odd rows, even columns
+            - Channel 3: odd rows, odd columns
+
+    Note:
+        - Requires CUDA tensor (torch.cuda.FloatTensor)
+        - Used for FFD-based image processing
+    """
     # batch channel time height width
     realign_input = torch.cuda.FloatTensor(input.shape[0], input.shape[1]*4, input.shape[2], int(input.shape[3]/2), int(input.shape[4]/2))
     # print('realign_input -----> ',realign_input.shape)
@@ -154,6 +269,26 @@ def FFDrealign4(input):
     return realign_input
 
 def inv_FFDrealign4(input):
+    """
+    Inverse realignment for 4-way FFD processing.
+
+    Reconstructs original spatial dimensions from 4-way realigned tensor by
+    combining 4 channel groups back into spatial locations, reducing channels
+    by 4x and increasing spatial dimensions by 2x in height and width.
+
+    Args:
+        input (torch.Tensor): Realigned tensor with shape
+            (batch, channels*4, time, height, width)
+
+    Returns:
+        torch.Tensor: Reconstructed tensor with shape
+            (batch, channels/4, time, height*2, width*2)
+            Spatial locations are reconstructed from the 4 channel groups
+
+    Note:
+        - Requires CUDA tensor (torch.cuda.FloatTensor)
+        - Inverse operation of FFDrealign4
+    """
     # batch channel time height width
     realign_input = torch.cuda.FloatTensor(input.shape[0], int(input.shape[1]/4), input.shape[2], int(input.shape[3]*2), int(input.shape[4]*2))
 
@@ -167,6 +302,28 @@ def inv_FFDrealign4(input):
 
 
 def FFDrealign8(input):
+    """
+    Realign 5D tensor for 8-way FFD (Free-Form Deformation) processing.
+
+    Rearranges spatial and temporal dimensions by splitting each spatiotemporal
+    location into 8 sub-locations (2x2x2 grid), increasing channels by 8x
+    and reducing temporal and spatial dimensions by 2x.
+
+    Args:
+        input (torch.Tensor): Input tensor with shape
+            (batch, channels, time, height, width)
+
+    Returns:
+        torch.Tensor: Realigned tensor with shape
+            (batch, channels*8, time/2, height/2, width/2)
+            The 8 sub-locations are arranged as:
+            - Channels 0-3: even time frames (2x2 spatial grid)
+            - Channels 4-7: odd time frames (2x2 spatial grid)
+
+    Note:
+        - Requires CUDA tensor (torch.cuda.FloatTensor)
+        - Used for 3D FFD-based image processing
+    """
     # batch channel time height width
     realign_input = torch.cuda.FloatTensor(input.shape[0], input.shape[1]*8, int(input.shape[2]/2), int(input.shape[3]/2), int(input.shape[4]/2))
     # print('realign_input -----> ',realign_input.shape)
@@ -183,6 +340,26 @@ def FFDrealign8(input):
     return realign_input
 
 def inv_FFDrealign8(input):
+    """
+    Inverse realignment for 8-way FFD processing.
+
+    Reconstructs original spatiotemporal dimensions from 8-way realigned tensor
+    by combining 8 channel groups back into spatiotemporal locations, reducing
+    channels by 8x and increasing temporal and spatial dimensions by 2x.
+
+    Args:
+        input (torch.Tensor): Realigned tensor with shape
+            (batch, channels*8, time, height, width)
+
+    Returns:
+        torch.Tensor: Reconstructed tensor with shape
+            (batch, channels/8, time*2, height*2, width*2)
+            Spatiotemporal locations are reconstructed from the 8 channel groups
+
+    Note:
+        - Requires CUDA tensor (torch.cuda.FloatTensor)
+        - Inverse operation of FFDrealign8
+    """
     # batch channel time height width
     realign_input = torch.cuda.FloatTensor(input.shape[0], int(input.shape[1]/8), int(input.shape[2]*2), int(input.shape[3]*2), int(input.shape[4]*2))
 

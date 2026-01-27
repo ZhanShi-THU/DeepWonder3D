@@ -9,14 +9,58 @@ import numpy as np
 import torch
 
 
-def main_train_pipeline(input_path, 
-                    input_folder, 
-                    SR_up_rate, 
-                    GPU_index, 
-                    output_dir,
-                    t_resolution = 10,
-                    output_folder = '', 
-                    type = 'sr'):
+def main_train_pipeline(
+    input_path,
+    input_folder,
+    SR_up_rate,
+    GPU_index,
+    output_dir,
+    t_resolution=10,
+    output_folder='',
+    type='sr',
+):
+    """
+    Run the main training pipeline for one or more deep learning models.
+
+    This function configures and launches training for super-resolution (SR),
+    background removal (RMBG), and/or segmentation (SEG) networks depending on
+    the content of the ``type`` argument.
+
+    Args:
+        input_path (str): Base directory that contains the training datasets.
+            Expected format is a filesystem path, for example ``'./data'`` or
+            ``'/path/to/input'``.
+        input_folder (str): Name of the subfolder inside ``input_path`` that
+            stores the training data for the selected models.
+        SR_up_rate (int): Upsampling factor used by the SR model, typically a
+            positive integer such as 2, 4, or 8.
+        GPU_index (str): Comma-separated list of GPU indices to use, for
+            example ``'0'`` or ``'0,1'``.
+        output_dir (str): Base output directory where training logs, checkpoints,
+            and final model weights will be written.
+        t_resolution (int, optional): Time resolution in milliseconds reserved
+            for potential temporal settings. Currently unused but kept for
+            forward compatibility.
+        output_folder (str, optional): Name of the subfolder under
+            ``output_dir`` to store results. If empty, a default step folder
+            name will be used.
+        type (str, optional): Model type selector string. If it contains
+            ``'sr'``, the SR model is trained; if it contains ``'rmbg'``,
+            the RMBG model is trained; if it contains ``'seg'``, the
+            segmentation model is trained. Multiple keywords can be combined.
+
+    Returns:
+        None: All artifacts are saved to disk under the specified
+        ``output_dir`` and related subfolders.
+
+    Notes:
+        - Each model uses its own configuration dictionary imported from
+          ``para_dict_train``.
+        - Training objects are instantiated by helper functions such as
+          ``train_sr_net_acc`` and then executed via their ``run`` method.
+        - Multiple model types can be trained sequentially in a single call,
+          depending on the value of ``type``.
+    """
     NOW_path = input_path
     NOW_folder = input_folder
 
@@ -36,7 +80,7 @@ def main_train_pipeline(input_path,
         if SR_output_dir!='':
             SR_para['output_dir'] = SR_output_dir
         if SR_output_folder!='':
-            SR_para['SR_output_folder'] = SR_output_folder # 'SR'
+            SR_para['SR_output_folder'] = SR_output_folder
         print('SR_para -----> ',SR_para)
 
         SR_model_train = train_sr_net_acc(SR_para)
@@ -106,7 +150,6 @@ if __name__ == '__main__':
     input_datasets_folder = ''
     output_dir = ''
 
-    # sr rmbg seg
     main_train_pipeline(input_path = input_datasets_path, 
                     input_folder = input_datasets_folder, 
                     SR_up_rate = SR_up_rate, 

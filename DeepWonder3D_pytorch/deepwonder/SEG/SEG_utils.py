@@ -24,9 +24,53 @@ plt.switch_backend('agg')
 
 ########################################################################################################################
 def create_feature_maps(init_channel_number, number_of_fmaps):
+    """
+    Create a list of feature map channel numbers for U-Net architecture.
+
+    Generates exponentially increasing channel numbers starting from
+    init_channel_number, doubling at each level.
+
+    Args:
+        init_channel_number (int): Initial number of channels (base value)
+        number_of_fmaps (int): Number of feature map levels to generate
+
+    Returns:
+        list: List of channel numbers [init_channel_number, init_channel_number*2,
+            init_channel_number*4, ..., init_channel_number*2^(number_of_fmaps-1)]
+
+    Example:
+        create_feature_maps(64, 4) returns [64, 128, 256, 512]
+    """
     return [init_channel_number * 2 ** k for k in range(number_of_fmaps)]
 
 def save_yaml(opt, yaml_name):
+    """
+    Save training configuration parameters to a YAML file.
+
+    Extracts relevant parameters from the options object and saves them to a
+    YAML file for later reference or resuming training.
+
+    Args:
+        opt: Configuration object containing training parameters
+            Required attributes:
+            - epoch: Current epoch number
+            - n_epochs: Number of training epochs
+            - datasets_folder: Name of datasets folder
+            - GPU: GPU index string
+            - output_dir: Output directory path
+            - batch_size: Batch size for training
+            - img_s, img_w, img_h: Image dimensions (depth, width, height)
+            - gap_h, gap_w, gap_s: Gap sizes for patch extraction
+            - lr: Learning rate
+            - b1, b2: Adam optimizer beta parameters
+            - normalize_factor: Normalization factor for data
+            - datasets_path: Path to datasets
+            - train_datasets_size: Size of training dataset
+        yaml_name (str): Path to output YAML file
+
+    Returns:
+        None: File is saved directly to disk
+    """
     para = {'epoch':0,
     'n_epochs':0,
     'datasets_folder':0,
@@ -66,6 +110,24 @@ def save_yaml(opt, yaml_name):
 
 
 def read_yaml(opt, yaml_name):
+    """
+    Read training configuration parameters from a YAML file.
+
+    Loads parameters from a YAML file and updates the options object with
+    the saved configuration values.
+
+    Args:
+        opt: Configuration object to update with loaded parameters
+        yaml_name (str): Path to input YAML file
+
+    Returns:
+        None: Parameters are loaded into the opt object
+
+    Note:
+        - Only certain parameters are loaded (epoch, n_epochs, output_dir,
+          batch_size, lr, b1, b2, normalize_factor)
+        - Other parameters remain unchanged
+    """
     with open(yaml_name) as f:
         para = yaml.load(f, Loader=yaml.FullLoader)
         print(para)
@@ -87,6 +149,35 @@ def read_yaml(opt, yaml_name):
 
 
 def name2index(opt, input_name, num_h, num_w, num_s):
+    """
+    Convert patch filename to spatial indices and calculate patch coordinates.
+
+    Parses a patch filename to extract x, y, z indices and calculates the
+    corresponding coordinates in the full image stack and within the patch,
+    accounting for overlap regions (gaps).
+
+    Args:
+        opt: Configuration object containing:
+            - img_w, img_h, img_s: Patch dimensions (width, height, depth)
+            - gap_w, gap_h, gap_s: Gap sizes for overlap regions
+        input_name (str): Patch filename in format "..._x{idx}_y{idx}_z{idx}"
+            Example: "patch_x5_y3_z10"
+        num_h (int): Total number of patches in height dimension
+        num_w (int): Total number of patches in width dimension
+        num_s (int): Total number of patches in depth dimension
+
+    Returns:
+        tuple: 12 integers representing coordinates:
+            (stack_start_w, stack_end_w, patch_start_w, patch_end_w,
+             stack_start_h, stack_end_h, patch_start_h, patch_end_h,
+             stack_start_s, stack_end_s, patch_start_s, patch_end_s)
+            - stack_*: Coordinates in the full image stack
+            - patch_*: Coordinates within the patch (accounting for overlap)
+
+    Note:
+        - Edge patches (index 0 or max) have different overlap handling
+        - Middle patches use cut_w/h/s to account for overlap regions
+    """
     # print(input_name)
     name_list = input_name.split('_')
     # print(name_list)
@@ -157,6 +248,25 @@ def name2index(opt, input_name, num_h, num_w, num_s):
     int(stack_start_s) ,int(stack_end_s) ,int(patch_start_s) ,int(patch_end_s)
 
 def save_tiff_image(args, image_tensor, image_path):
+    """
+    Save image tensor as TIFF file after denormalization.
+
+    Converts a PyTorch tensor to numpy array, denormalizes it, and saves
+    as a TIFF image file.
+
+    Args:
+        args: Configuration object containing normalize_factor attribute
+        image_tensor (torch.Tensor): Image tensor to save
+        image_path (str): Output file path (will replace .png with .tif)
+
+    Returns:
+        None: File is saved directly to disk
+
+    Note:
+        - Denormalizes by multiplying with normalize_factor
+        - Converts .png extension to .tif in output path
+        - Uses skimage.io.imsave for saving
+    """
     image = (image_tensor.cpu().detach().numpy()*args.normalize_factor) #.astype(np.uint16)
     # print('image max ',np.max(image),' image min ',np.min(image))
     '''
@@ -170,11 +280,48 @@ def save_tiff_image(args, image_tensor, image_path):
     io.imsave(save_tiff_path,image)
 
 def save_numpy_image(args, image_tensor, image_path):
+    """
+    Save numpy array image as TIFF file after denormalization.
+
+    Denormalizes a numpy array image and saves it as a TIFF file.
+
+    Args:
+        args: Configuration object containing normalize_factor attribute
+        image_tensor (np.ndarray): Image array to save
+        image_path (str): Output file path (will replace .png with .tif)
+
+    Returns:
+        None: File is saved directly to disk
+
+    Note:
+        - Denormalizes by multiplying with normalize_factor
+        - Converts .png extension to .tif in output path
+        - Uses skimage.io.imsave for saving
+    """
     image = (image_tensor*args.normalize_factor) #.astype(np.uint16)
     save_tiff_path = image_path.replace('.png','.tif')
     io.imsave(save_tiff_path,image)
 
 def save_feature_tiff_image(image_tensor, image_path):
+    """
+    Save feature tensor as TIFF image with uint8 conversion.
+
+    Converts a PyTorch tensor to numpy array, scales to 0-255 range,
+    and saves as uint8 TIFF image.
+
+    Args:
+        image_tensor (torch.Tensor): Feature tensor to save
+        image_path (str): Output file path (will replace .png with .tif)
+
+    Returns:
+        None: File is saved directly to disk
+
+    Note:
+        - Multiplies by 255 and clips to [0, 255] range
+        - Converts to uint8 dtype
+        - Converts .png extension to .tif in output path
+        - Used for saving feature maps or intermediate results
+    """
     image = image_tensor.cpu().detach().numpy()*255 #).astype(np.uint8)
     # image = np.clip(image, 0, 65535).astype('uint16')
     image = np.clip(image, 0, 255).astype('uint8')
@@ -184,6 +331,30 @@ def save_feature_tiff_image(image_tensor, image_path):
 
 
 def FFDrealign4(input):
+    """
+    Realign 4D tensor for 4-way FFD (Free-Form Deformation) processing.
+
+    Rearranges spatial dimensions by splitting each spatial location into
+    4 sub-locations (2x2 grid), increasing channels by 4x and reducing
+    spatial dimensions by 2x in height and width.
+
+    Args:
+        input (torch.Tensor): Input tensor with shape
+            (batch, channels, time, height, width)
+
+    Returns:
+        torch.Tensor: Realigned tensor with shape
+            (batch, channels*4, time, height/2, width/2)
+            The 4 sub-locations are arranged as:
+            - Channel 0: even rows, even columns
+            - Channel 1: even rows, odd columns
+            - Channel 2: odd rows, even columns
+            - Channel 3: odd rows, odd columns
+
+    Note:
+        - Requires CUDA tensor (torch.cuda.FloatTensor)
+        - Used for FFD-based image processing
+    """
     # batch channel time height width
     realign_input = torch.cuda.FloatTensor(input.shape[0], input.shape[1]*4, input.shape[2], int(input.shape[3]/2), int(input.shape[4]/2))
     # print('realign_input -----> ',realign_input.shape)
@@ -197,6 +368,26 @@ def FFDrealign4(input):
     return realign_input
 
 def inv_FFDrealign4(input):
+    """
+    Inverse realignment for 4-way FFD processing.
+
+    Reconstructs original spatial dimensions from 4-way realigned tensor by
+    combining 4 channel groups back into spatial locations, reducing channels
+    by 4x and increasing spatial dimensions by 2x in height and width.
+
+    Args:
+        input (torch.Tensor): Realigned tensor with shape
+            (batch, channels*4, time, height, width)
+
+    Returns:
+        torch.Tensor: Reconstructed tensor with shape
+            (batch, channels/4, time, height*2, width*2)
+            Spatial locations are reconstructed from the 4 channel groups
+
+    Note:
+        - Requires CUDA tensor (torch.cuda.FloatTensor)
+        - Inverse operation of FFDrealign4
+    """
     # batch channel time height width
     realign_input = torch.cuda.FloatTensor(input.shape[0], int(input.shape[1]/4), input.shape[2], int(input.shape[3]*2), int(input.shape[4]*2))
 

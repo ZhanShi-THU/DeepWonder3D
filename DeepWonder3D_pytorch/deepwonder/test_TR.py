@@ -6,6 +6,48 @@ def adjust_time_resolution(input_path,
                            output_path,
                            output_folder,
                            t_resolution):
+    """
+    Adjust temporal resolution of image sequence.
+    
+    Resamples image sequence temporal resolution from original to target
+    resolution using linear interpolation.
+    
+    Args:
+        input_path (str): Base path for input data
+            Format: String path, e.g., './data' or '/path/to/input'
+            Meaning: Parent directory containing input folder
+        
+        input_folder (str): Input folder name
+            Format: String, e.g., 'raw_data'
+            Meaning: Folder name containing original TIFF image files
+        
+        output_path (str): Base path for output data
+            Format: String path, e.g., './result' or '/path/to/output'
+            Meaning: Parent directory for output folder
+        
+        output_folder (str): Output folder name
+            Format: String, e.g., 'adjusted_data'
+            Meaning: Folder name for saving adjusted images
+        
+        t_resolution (int): Target temporal resolution (milliseconds)
+            Format: Positive integer, e.g., 10, 20, 50, etc.
+            Meaning: Target temporal resolution, assuming original resolution
+            is 10ms
+            Note: If t_resolution=10, maintains original resolution; if
+            t_resolution=20, temporal resolution is halved
+    
+    Returns:
+        None: Processed images are saved directly to output folder
+    
+    Note:
+        - Uses linear interpolation (numpy.interp) for temporal dimension
+          resampling
+        - Assumes original temporal resolution is 10ms
+        - New frame count = original frame count / (t_resolution / 10)
+        - Interpolates each pixel's time series independently
+        - Creates output folder if it doesn't exist
+        - Requires tifffile library for reading/writing TIFF files
+    """
     data_path = input_path + '//' + input_folder
     import os
     for im_name in list(os.walk(data_path, topdown=False))[-1][-1]:
@@ -39,6 +81,35 @@ def adjust_time_resolution(input_path,
 
 
 def get_data_fingerprint(data_path):
+    """
+    Get dimension information for all image files in data folder.
+    
+    Scans all TIFF files in the specified folder and collects their width,
+    height, and depth (temporal frame count) information.
+    
+    Args:
+        data_path (str): Data folder path
+            Format: String path, e.g., './data/raw' or '/path/to/data'
+            Meaning: Folder path containing TIFF image files
+    
+    Returns:
+        tuple: (im_w_list, im_h_list, im_s_list, min_im_w, min_im_h, min_im_s)
+            Image dimension information
+            Format: (list, list, list, int, int, int)
+            Meaning:
+            - im_w_list: List of widths for all images
+            - im_h_list: List of heights for all images
+            - im_s_list: List of temporal frame counts for all images
+            - min_im_w: Minimum width
+            - min_im_h: Minimum height
+            - min_im_s: Minimum temporal frame count
+    
+    Note:
+        - Only scans TIFF format files (.tif or .tiff extension)
+        - Assumes image format is 3D array with shape (time, height, width)
+        - Used during data preprocessing to determine uniform crop size
+        - Requires tifffile library for reading TIFF files
+    """
     im_w_list = []
     im_h_list = []
     im_s_list = []

@@ -33,6 +33,25 @@ from deepwonder.utils import print_dict
 
 class test_sr_net_acc():
     def __init__(self, SR_para):
+        """
+        Testing wrapper for the super-resolution (SR) network with signal output.
+
+        This class loads a pretrained SR model, prepares overlapping patches
+        from low-resolution image sequences, runs patch-wise SR inference, and
+        stitches the outputs back into full high-resolution volumes.
+
+        Args:
+            SR_para (dict): Configuration dictionary for testing. Typical keys:
+                - ``GPU``: Comma-separated GPU indices.
+                - ``output_dir`` / ``SR_output_folder``: Output directories.
+                - ``datasets_path`` / ``datasets_folder``: Input data root and
+                  folder name.
+                - ``img_w``, ``img_h``, ``img_s``: Patch dimensions.
+                - ``gap_*``: Overlap configuration.
+                - ``up_rate``: Spatial upsampling factor.
+                - ``signal_SR_*``: Parameters for the signal SR network and
+                  its checkpoint (model name, f_maps, channels, etc.).
+        """
         self.GPU = '0,1'
         self.output_dir = './/test_results'
         self.SR_output_folder = ''
@@ -79,6 +98,12 @@ class test_sr_net_acc():
     #########################################################################
     #########################################################################
     def make_folder(self):
+        """
+        Create output folders for SR test results if they do not exist.
+
+        Sets up ``output_path``, ``result_output_path``, and prediction
+        subfolders under ``output_dir`` and ``SR_output_folder``.
+        """
 
         current_time = 'SR_' + self.datasets_folder + '_up' + str(self.up_rate)  # +'_'+self.signal_SR_model[-12:]
         self.output_path = self.output_dir + '//' + self.SR_output_folder  # current_time
@@ -106,6 +131,13 @@ class test_sr_net_acc():
     #########################################################################
     #########################################################################
     def save_para(self):
+        """
+        Save SR testing configuration (including network size) to disk.
+
+        Writes a YAML file with all current attributes (excluding the network
+        instance) and a TXT summary containing the number of network
+        parameters, both under ``result_output_path``.
+        """
         yaml_dict = self.__dict__.copy()
         del yaml_dict['signal_SR_net']
         # del yaml_dict['optimizer'] 
@@ -121,6 +153,18 @@ class test_sr_net_acc():
     #########################################################################
     #########################################################################
     def reset_para(self, SR_para):
+        """
+        Reset instance attributes from parameter dictionary and model YAML.
+
+        First overrides attributes using ``SR_para`` (if attributes exist),
+        then loads the YAML file associated with the signal SR model to set
+        normalization, channel configuration, temporal depth, and network
+        type.
+
+        Args:
+            SR_para (dict): Parameter dictionary provided by the caller to
+                customize testing behavior (paths, batch size, up_rate, etc.).
+        """
         for key, value in SR_para.items():
             if hasattr(self, key):
                 setattr(self, key, value)
@@ -145,6 +189,15 @@ class test_sr_net_acc():
     #########################################################################
     #########################################################################
     def initialize_model(self):
+        """
+        Initialize the SR network and load pretrained weights.
+
+        Builds the SR model specified by ``net_type``, wraps it with
+        ``torch.nn.DataParallel``, moves it to GPU (if configured), loads the
+        checkpoint specified by ``signal_SR_pth_index`` and
+        ``signal_SR_model``, and saves the full configuration via
+        ``save_para``.
+        """
         '''
         self.signal_SR_net = SR_Net(in_ch = self.signal_SR_in_c, 
                             out_ch = self.signal_SR_out_c,
@@ -179,8 +232,12 @@ class test_sr_net_acc():
         self.save_para()
 
     def prune_network(self):
-        # for name in self.signal_SR_net.state_dict():
-        #     print(name)
+        """
+        Debug helper to inspect and visualize early convolutional weights.
+
+        This function is intended for offline analysis and is not used in the
+        normal testing flow.
+        """
         para1 = self.signal_SR_net.state_dict()['module.net.net1.conv1.conv1.0.weight'].cpu().detach().numpy()
         print(para1.shape)
         para1 = para1.reshape(160, 3, 3)
@@ -193,6 +250,15 @@ class test_sr_net_acc():
     #########################################################################
     #########################################################################
     def generate_patch(self):
+        """
+        Prepare patch-wise SR test metadata.
+
+        Uses ``test_preprocess_signal_mean_SR`` to compute:
+        - ``name_list``: list of volume IDs.
+        - ``img_list`` / ``mean_img_list``: input image stacks.
+        - ``coordinate_list`` / ``mean_coordinate_list``: patch coordinates
+          for signal and mean SR inputs respectively.
+        """
         self.name_list, self.img_list, self.mean_img_list, self.coordinate_list, self.mean_coordinate_list = test_preprocess_signal_mean_SR(
             self)
         print('SR name list : ', self.name_list)
@@ -200,6 +266,13 @@ class test_sr_net_acc():
     #########################################################################
     #########################################################################
     def test(self):
+        """
+        Run SR inference over all test volumes and save reconstructed signals.
+
+        Iterates through precomputed patches, forwards them through the SR
+        network, reconstructs full-resolution volumes, crops temporal borders,
+        and saves the result as TIFF stacks to ``pred_signal_output_path``.
+        """
         # print('multiprocessing -----> ') , force=True
         # torch.multiprocessing.set_start_method('spawn')
         prev_time = time.time()
@@ -238,8 +311,10 @@ class test_sr_net_acc():
                 if if_print_gpu_use:
                     from deepwonder.utils import get_gpu_mem_info
                     gpu_mem_total, gpu_mem_used, gpu_mem_free = get_gpu_mem_info(gpu_id=0)
-                    print(r'当前显卡显存使用情况：总共 {} MB， 已经使用 {} MB， 剩余 {} MB'
-                          .format(gpu_mem_total, gpu_mem_used, gpu_mem_free))
+                    print(
+                        r'GPU memory usage: total {} MB, used {} MB, free {} MB'
+                        .format(gpu_mem_total, gpu_mem_used, gpu_mem_free)
+                    )
                 # prev_time = time.time()
                 ################################################################################################################
                 if iteration % (1) == 0:

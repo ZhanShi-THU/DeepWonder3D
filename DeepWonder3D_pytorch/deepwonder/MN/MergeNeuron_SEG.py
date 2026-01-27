@@ -19,6 +19,28 @@ import multiprocessing as mp
 
 
 def otsu(gray):
+    """
+    Apply Otsu's thresholding algorithm to a grayscale image.
+
+    Implements Otsu's method for automatic threshold selection by maximizing
+    the between-class variance. Returns both the thresholded binary image and
+    the threshold value.
+
+    Args:
+        gray (np.ndarray): Input grayscale image with shape (H, W)
+            Pixel values should be in range [0, 255]
+
+    Returns:
+        tuple: (final_img, final_thresh)
+            - final_img (np.ndarray): Binary thresholded image with shape (H, W)
+              Pixels > threshold are set to 255, others to 0
+            - final_thresh (int): Optimal threshold value found by Otsu's method
+
+    Note:
+        - Uses histogram with 256 bins (0-255) for threshold calculation
+        - Maximizes between-class variance: Wb * Wf * (mub - muf)^2
+        - Returns binary image with values 0 and 255
+    """
     pixel_number = gray.shape[0] * gray.shape[1]
     mean_weigth = 1.0 / pixel_number
     # 发现bins必须写到257，否则255这个值只能分到[254,255)区间
@@ -59,6 +81,48 @@ def merge_neuron_SEG_mul_inten(mask_stack,
                                inten_thres=0.01,
                                edge_value=20,
                                smallest_neuron_area=36):
+    """
+    Merge neurons from segmentation mask stack using multiple intensity criteria.
+
+    Processes a 3D mask stack to identify, filter, and merge neuron segments
+    based on shape, intensity, and temporal correlation criteria. Applies
+    Otsu thresholding, filters by roundness and size, and merges overlapping
+    or correlated segments.
+
+    Args:
+        mask_stack (np.ndarray): 3D segmentation mask stack with shape (N, H, W)
+            where N is number of time frames
+        raw_image (np.ndarray): Raw image data with shape (N, H, W) or (N, C, H, W)
+        quit_round_rate (float, optional): Minimum roundness rate for keeping neurons.
+            Default is 0.8.
+        good_round_rate (float, optional): Good roundness threshold. Default is 0.9.
+        good_round_size_rate (float, optional): Size rate for good round neurons.
+            Default is 0.8.
+        corr_mark (float, optional): Correlation threshold for merging neurons.
+            Default is 0.9.
+        max_value (int, optional): Maximum pixel value in mask. Default is 1000.
+        seg_thres (float, optional): Segmentation threshold. Default is 0.7.
+        if_nmf (bool, optional): Whether to use NMF (Non-negative Matrix Factorization).
+            Default is True.
+        inten_thres (float, optional): Intensity threshold. Default is 0.01.
+        edge_value (int, optional): Edge pixel value threshold. Default is 20.
+        smallest_neuron_area (int, optional): Minimum neuron area in pixels.
+            Default is 36 (for 2um resolution).
+
+    Returns:
+        dict or np.ndarray: Merged neuron mask list or final mask stack
+            Format depends on processing stage, typically contains:
+            - Neuron masks with contours
+            - Temporal traces
+            - Centroid coordinates
+            - Other neuron properties
+
+    Note:
+        - Applies percentile-based normalization to mask stack
+        - Filters neurons by roundness, size, and edge proximity
+        - Uses correlation-based merging for overlapping segments
+        - Can apply NMF for further refinement
+    """
     # 1um 144
     # 2um 36
 

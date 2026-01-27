@@ -24,6 +24,26 @@ import random
 
 
 def z_group(img, z_num):
+    """
+    Group consecutive z-slices by taking maximum projection.
+
+    Reduces temporal/depth dimension by grouping consecutive slices and taking
+    the maximum value across each group. Used for temporal downsampling or
+    depth compression.
+
+    Args:
+        img (np.ndarray): 3D image stack with shape (T, H, W)
+            where T is number of time frames or depth slices
+        z_num (int): Number of consecutive slices to group together
+
+    Returns:
+        np.ndarray: Grouped image with shape (T', H, W) where T' = ceil(T/z_num)
+            Each slice is the maximum projection of z_num consecutive slices
+
+    Note:
+        - Last group may contain fewer slices if T is not divisible by z_num
+        - Uses maximum projection (max pooling) across grouped slices
+    """
     img_z = img.shape[0]
     img_z_group = math.ceil(img_z/z_num)
     img_grouped = np.zeros((img_z_group, img.shape[1], img.shape[2]))
@@ -38,6 +58,27 @@ def z_group(img, z_num):
 
 
 def Get_Contours(position, mask_h, mask_w):
+    """
+    Extract contours from a set of pixel positions.
+
+    Converts a list of pixel coordinates into OpenCV contours by creating
+    a binary mask and finding contours.
+
+    Args:
+        position (np.ndarray): Array of pixel positions with shape (N, 2)
+            Each row is [row, col] coordinates
+        mask_h (int): Height of the mask
+        mask_w (int): Width of the mask
+
+    Returns:
+        list: List of contours found by cv2.findContours
+            Each contour is a numpy array of points
+
+    Note:
+        - Creates a binary mask with pixels at given positions set to 255
+        - Uses cv2.findContours with RETR_TREE and CHAIN_APPROX_SIMPLE
+        - Returns all contours found in the mask
+    """
     mask_j = np.zeros((mask_h, mask_w), np.uint8)
     for p_i in range(0, position.shape[0]):
         # print(position[ii,:])
@@ -55,6 +96,37 @@ def initial_mask_list(mask,
                         quit_round_rate = 0.5, 
                         good_round_rate = 0.85,
                         smallest_neuron_area = 64):
+    """
+    Initialize neuron list from segmentation mask by filtering connected components.
+
+    Performs connected component labeling on the mask and filters components
+    based on roundness and area criteria. Separates neurons into "good" and
+    "bad" categories based on roundness threshold.
+
+    Args:
+        mask (np.ndarray): Segmentation mask with shape (H, W)
+        quit_round_rate (float, optional): Minimum roundness rate to keep neuron.
+            Default is 0.5.
+        good_round_rate (float, optional): Threshold for "good" roundness.
+            Neurons with roundness >= good_round_rate are classified as good.
+            Default is 0.85.
+        smallest_neuron_area (int, optional): Minimum area in pixels to consider
+            as a neuron. Default is 64.
+
+    Returns:
+        tuple: (good_neuron_list, bad_neuron_list)
+            - good_neuron_list (list): List of dictionaries for good neurons,
+              each containing 'position', 'split', 'round_rate'
+            - bad_neuron_list (list): List of dictionaries for bad neurons,
+              same structure as good_neuron_list
+
+    Note:
+        - Uses 8-connectivity for connected component labeling
+        - Roundness calculated as: 4*π*area / perimeter²
+        - Only components with single contour are considered
+        - Good neurons have roundness >= good_round_rate
+        - Bad neurons have roundness between quit_round_rate and good_round_rate
+    """
     mask_nor = mask/np.max(mask)*255
     neuron_size = 20
     neuron_area = math.pi*neuron_size*neuron_size/4
@@ -121,10 +193,58 @@ def initial_mask_list(mask,
 
 
 def neuron_filter(mask_list, min_area, max_area, round_rate):
+    """
+    Filter neuron list based on area and roundness criteria.
+
+    Placeholder function for filtering neurons by area and roundness thresholds.
+    Currently not implemented (pass statement).
+
+    Args:
+        mask_list (list): List of neuron dictionaries
+        min_area (int): Minimum area threshold
+        max_area (int): Maximum area threshold
+        round_rate (float): Minimum roundness threshold
+
+    Returns:
+        None: Function not yet implemented
+
+    Note:
+        - This function is a placeholder and currently does nothing
+        - Intended to filter neurons based on area and roundness criteria
+    """
     pass
 
-# , save_folder=''
 def Mining_rest_neuron(w_g_neuron_list, w_b_neuron_list, img, quit_round_rate = 0.5, smallest_neuron_area = 100):
+    """
+    Mine additional neurons from remaining regions after removing good neurons.
+
+    Extracts neurons from regions that remain after subtracting good neuron
+    masks from bad neuron masks. This helps recover neurons that were
+    partially occluded or merged with good neurons.
+
+    Args:
+        w_g_neuron_list (list): List of good neuron dictionaries
+            Each dictionary contains 'position' key with pixel coordinates
+        w_b_neuron_list (list): List of bad neuron dictionaries
+            Same structure as w_g_neuron_list
+        img (np.ndarray): Image stack with shape (T, H, W) for reference
+        quit_round_rate (float, optional): Minimum roundness rate to keep neuron.
+            Default is 0.5.
+        smallest_neuron_area (int, optional): Minimum area in pixels.
+            Default is 100.
+
+    Returns:
+        list: List of newly discovered neuron dictionaries
+            Each dictionary contains 'position', 'split', 'round_rate'
+            Only includes neurons with roundness > quit_round_rate and
+            area > smallest_neuron_area
+
+    Note:
+        - Computes difference: rest_mask = bad_neuron_mask - good_neuron_mask
+        - Finds contours in remaining regions
+        - Selects largest contour from each remaining region
+        - Filters by roundness and area criteria
+    """
     w_g_neuron_mask = np.zeros((img.shape[1],img.shape[2]))
     for i in range(0, len(w_g_neuron_list)):
         g_neuron = w_g_neuron_list[i]
@@ -188,6 +308,36 @@ def Neuron_List_Initial(mask,
                         quit_round_rate = 0.5, 
                         good_round_rate = 0.8, 
                         good_round_size_rate = 0.5):
+    """
+    Initialize neuron list from segmentation mask with comprehensive filtering.
+
+    Performs connected component labeling and filters neurons based on
+    roundness, area, and size criteria. More comprehensive than initial_mask_list,
+    includes additional filtering and processing steps.
+
+    Args:
+        mask (np.ndarray): Segmentation mask with shape (H, W)
+        image (np.ndarray): Original image stack with shape (T, H, W) for reference
+        quit_round_rate (float, optional): Minimum roundness rate to keep neuron.
+            Default is 0.5.
+        good_round_rate (float, optional): Threshold for "good" roundness.
+            Default is 0.8.
+        good_round_size_rate (float, optional): Size rate threshold for good neurons.
+            Default is 0.5.
+
+    Returns:
+        list: List of neuron dictionaries, each containing:
+            - 'position': List of [row, col] pixel coordinates
+            - 'split': Split flag (0 = not split)
+            - 'round_rate': Calculated roundness value
+            - Additional properties based on filtering criteria
+
+    Note:
+        - Uses 8-connectivity for connected component labeling
+        - Filters by roundness, area, and size criteria
+        - Calculates roundness as: 4*π*area / perimeter²
+        - Only processes components with single contour
+    """
     neuron_size = 20
     neuron_area = math.pi*neuron_size*neuron_size/4
     smallest_neuron_area = 50
@@ -285,6 +435,35 @@ def Neuron_List_Initial(mask,
 
 
 def Split_Neuron(single_neuron, image, quit_round_rate, rest_rate):
+    """
+    Split a large neuron into multiple smaller neurons using NMF decomposition.
+
+    Uses Non-negative Matrix Factorization (NMF) to decompose a large neuron
+    mask into multiple components based on temporal signal patterns. Each
+    component is then validated and converted to a separate neuron if it meets
+    roundness criteria.
+
+    Args:
+        single_neuron (dict): Neuron dictionary containing 'position' key with
+            list of [row, col] pixel coordinates
+        image (np.ndarray): Image stack with shape (T, H, W)
+            Temporal dimension T, spatial dimensions H, W
+        quit_round_rate (float): Minimum roundness rate to keep split neuron
+        rest_rate (float): Rate parameter for calculating NMF dimensions
+
+    Returns:
+        list: List of neuron dictionaries after splitting
+            Each dictionary contains 'position', 'trace', 'split' keys
+            - If neuron cannot be split (nmf_dim <= 1), returns original neuron
+            - If split, returns multiple neurons with 'split' = 1
+
+    Note:
+        - Uses NMF to decompose temporal signals at neuron pixel positions
+        - Number of components: round((area - neuron_area*rest_rate) / neuron_area/rest_rate) + 1
+        - Each NMF component is thresholded and converted to a mask
+        - Only components with single contour and roundness > quit_round_rate are kept
+        - Uses 'nndsvd' initialization for NMF
+    """
     position = single_neuron['position']
     len_p = len(position)
     mask_matrix = np.zeros((image.shape[0], len_p))
@@ -375,6 +554,31 @@ def Split_Neuron(single_neuron, image, quit_round_rate, rest_rate):
 
 
 def SingleAddtrace1(single_seg, image, mode='add'):
+    """
+    Add temporal trace and centroid to a single neuron segment.
+
+    Computes the average temporal trace and centroid coordinates for a neuron
+    by averaging across all pixel positions in the neuron mask.
+
+    Args:
+        single_seg (dict): Neuron dictionary containing 'position' key with
+            list of [row, col] pixel coordinates
+        image (np.ndarray): Image stack with shape (T, H, W)
+            Temporal dimension T, spatial dimensions H, W
+        mode (str, optional): Operation mode. Default is 'add'.
+            - 'add': Only add trace/centroid if they don't exist
+            - 'update': Always update trace/centroid
+
+    Returns:
+        dict: Modified neuron dictionary with added/updated keys:
+            - 'trace': Average temporal trace with shape (T,)
+            - 'centroid': Centroid coordinates [row, col] with shape (2,)
+
+    Note:
+        - Trace is computed as mean of temporal signals at all pixel positions
+        - Centroid is computed as mean of all pixel coordinates
+        - In 'add' mode, only adds if 'trace' or 'centroid' keys don't exist
+    """
     position = single_seg['position']
     if mode=='add':
         if not 'trace' in single_seg or not 'centroid' in single_seg:
@@ -405,6 +609,27 @@ def SingleAddtrace1(single_seg, image, mode='add'):
 
 
 def SingleAddtrace(single_seg, image):
+    """
+    Add temporal trace and centroid to a single neuron segment (always update).
+
+    Computes and updates the average temporal trace and centroid coordinates
+    for a neuron by averaging across all pixel positions.
+
+    Args:
+        single_seg (dict): Neuron dictionary containing 'position' key with
+            list of [row, col] pixel coordinates
+        image (np.ndarray): Image stack with shape (T, H, W)
+
+    Returns:
+        dict: Modified neuron dictionary with updated keys:
+            - 'trace': Average temporal trace with shape (T,)
+            - 'centroid': Centroid coordinates [row, col] with shape (2,)
+
+    Note:
+        - Always updates trace and centroid (unlike SingleAddtrace1 with mode='add')
+        - Trace is mean of temporal signals at all pixel positions
+        - Centroid is mean of all pixel coordinates
+    """
     position = single_seg['position']
     trace = np.zeros((image.shape[0], ))
     centroid = np.zeros((2,))
@@ -421,6 +646,26 @@ def SingleAddtrace(single_seg, image):
 
 
 def listAddtrace3(list, image, mode='add'):
+    """
+    Add temporal traces to a list of neurons using multiprocessing.
+
+    Computes temporal traces and centroids for all neurons in the list using
+    parallel processing for improved performance.
+
+    Args:
+        list (list): List of neuron dictionaries, each containing 'position' key
+        image (np.ndarray): Image stack with shape (T, H, W)
+        mode (str, optional): Operation mode. Default is 'add' (not used in this version).
+
+    Returns:
+        list: List of neuron dictionaries with added 'trace' and 'centroid' keys
+            Note: Currently returns original list (implementation may be incomplete)
+
+    Note:
+        - Uses multiprocessing with number of cores equal to CPU count
+        - Processes neurons in parallel using pool.apply_async
+        - Note: Return statement returns original list, not processed list
+    """
     # mode update add
     # print('listAddtrace ---> ',len(list))
     num_cores = int(mp.cpu_count())
@@ -444,6 +689,24 @@ def listAddtrace3(list, image, mode='add'):
 
 
 def listAddtrace2(list, image, mode='add'):
+    """
+    Add temporal traces to a list of neurons (sequential processing).
+
+    Computes temporal traces and centroids for all neurons in the list using
+    sequential processing.
+
+    Args:
+        list (list): List of neuron dictionaries, each containing 'position' key
+        image (np.ndarray): Image stack with shape (T, H, W)
+        mode (str, optional): Operation mode. Default is 'add'.
+
+    Returns:
+        list: List of neuron dictionaries with added 'trace' and 'centroid' keys
+
+    Note:
+        - Processes neurons sequentially (one at a time)
+        - Uses SingleAddtrace1 with mode='add' for each neuron
+    """
     # mode update add
     # print('listAddtrace ---> ',len(list))
     for i in range(0, len(list)):
@@ -453,6 +716,26 @@ def listAddtrace2(list, image, mode='add'):
 
 
 def listAddtrace4(list, image, mode='add'):
+    """
+    Add temporal traces to a list of neurons (inline implementation).
+
+    Computes temporal traces and centroids for all neurons using inline
+    computation without calling separate functions.
+
+    Args:
+        list (list): List of neuron dictionaries, each containing 'position' key
+        image (np.ndarray): Image stack with shape (T, H, W)
+        mode (str, optional): Operation mode. Default is 'add'.
+            - 'add': Only add if 'trace' or 'centroid' don't exist
+            - 'update': Always update trace and centroid
+
+    Returns:
+        list: List of neuron dictionaries with added/updated 'trace' and 'centroid' keys
+
+    Note:
+        - Inline implementation for performance
+        - Same functionality as SingleAddtrace1 but processes entire list
+    """
     # mode update add
     # print('listAddtrace ---> ',len(list))
     for i in range(0, len(list)):
@@ -487,6 +770,30 @@ def listAddtrace4(list, image, mode='add'):
 
 
 def listAddtrace(list, image, mode='add', trace_mode='sample'):
+    """
+    Add temporal traces to a list of neurons with sampling option.
+
+    Computes temporal traces and centroids for all neurons, with option to
+    sample a subset of pixels for faster computation.
+
+    Args:
+        list (list): List of neuron dictionaries, each containing 'position' key
+        image (np.ndarray): Image stack with shape (T, H, W)
+        mode (str, optional): Operation mode. Default is 'add'.
+            - 'add': Only add if 'trace' or 'centroid' don't exist
+            - 'update': Always update trace and centroid
+        trace_mode (str, optional): Pixel sampling mode. Default is 'sample'.
+            - 'sample': Randomly sample 10 pixels per neuron
+            - 'all': Use all pixels in the neuron
+
+    Returns:
+        list: List of neuron dictionaries with added/updated 'trace' and 'centroid' keys
+
+    Note:
+        - Sampling mode can significantly speed up computation for large neurons
+        - Random sampling uses 10 pixels per neuron
+        - Trace and centroid computed from sampled/all pixel positions
+    """
     # mode update add
     # print('listAddtrace ---> ',len(list))
     for i in range(0, len(list)):
@@ -526,6 +833,33 @@ def listAddtrace(list, image, mode='add', trace_mode='sample'):
 
 
 def listAdd_remain_trace(list, image, dict_name='remain_trace', mode='add', trace_mode='sample'):
+    """
+    Add temporal traces for remaining regions of neurons.
+
+    Computes temporal traces for remaining (non-primary) regions of neurons,
+    stored under a custom dictionary key name.
+
+    Args:
+        list (list): List of neuron dictionaries, each containing 'remain_position' key
+        image (np.ndarray): Image stack with shape (T, H, W)
+        dict_name (str, optional): Dictionary key name for storing trace.
+            Default is 'remain_trace'.
+        mode (str, optional): Operation mode. Default is 'add'.
+            - 'add': Only add if dict_name doesn't exist
+            - 'update': Always update trace
+        trace_mode (str, optional): Pixel sampling mode. Default is 'sample'.
+            - 'sample': Randomly sample 10 pixels
+            - 'all': Use all pixels in remain_position
+
+    Returns:
+        list: List of neuron dictionaries with added/updated dict_name key
+            containing temporal trace for remaining regions
+
+    Note:
+        - Used for computing traces from remaining (non-primary) neuron regions
+        - Similar to listAddtrace but uses 'remain_position' instead of 'position'
+        - Trace stored under custom key name (default 'remain_trace')
+    """
     # mode update add
     # print('listAddtrace ---> ',len(list))
     # print(list[0])
@@ -566,6 +900,27 @@ def listAdd_remain_trace(list, image, dict_name='remain_trace', mode='add', trac
 
 
 def list_add_mask(list, image):
+    """
+    Create binary mask stack from list of neuron positions.
+
+    Converts a list of neuron dictionaries into a 3D binary mask stack where
+    each slice represents one neuron's spatial mask.
+
+    Args:
+        list (list): List of neuron dictionaries, each containing 'position' key
+            with list of [row, col] pixel coordinates
+        image (np.ndarray): Image stack with shape (T, H, W) for reference dimensions
+
+    Returns:
+        np.ndarray: Binary mask stack with shape (N, H, W)
+            where N is number of neurons, H and W are spatial dimensions
+            Value 1 indicates neuron pixel, 0 indicates background
+
+    Note:
+        - Each neuron's mask is stored in a separate slice
+        - Mask values are 1 for neuron pixels, 0 for background
+        - Spatial dimensions match the last two dimensions of input image
+    """
     all_mask = np.zeros((len(list), image.shape[-2], image.shape[-1]))
     for i in range(0, len(list)):
         single_seg = list[i]
@@ -581,6 +936,26 @@ def list_add_mask(list, image):
 
 
 def remain_mask(all_mask):
+    """
+    Compute remaining mask regions after removing overlaps.
+
+    For each neuron mask, computes the region that remains after subtracting
+    all other neuron masks. This identifies non-overlapping regions of each neuron.
+
+    Args:
+        all_mask (np.ndarray): Binary mask stack with shape (N, H, W)
+            where N is number of neurons, H and W are spatial dimensions
+
+    Returns:
+        np.ndarray: Remaining mask stack with shape (N, H, W)
+            Each slice contains the non-overlapping region of that neuron
+            Value 1 indicates remaining region, 0 indicates overlap or background
+
+    Note:
+        - For each neuron, subtracts all other neuron masks
+        - Result is thresholded to binary (0 or 1)
+        - Used to identify unique regions of each neuron
+    """
     all_remain_mask = np.zeros((all_mask.shape[-3], all_mask.shape[-2], all_mask.shape[-1]))
     for i in range(0, all_mask.shape[-3]):
         now_mask = all_mask[i,:,:].copy()
@@ -603,6 +978,24 @@ def remain_mask(all_mask):
 
 
 def remain_mask_test_list(list):
+    """
+    Test function for computing remaining positions (debugging).
+
+    Computes remaining positions for neurons after removing overlaps from
+    other neurons. Used for testing and debugging position overlap detection.
+
+    Args:
+        list (list): List of neuron dictionaries, each containing 'position' key
+
+    Returns:
+        list: List of [row, col] positions (returns last neuron's position)
+            Note: Function appears incomplete, mainly for debugging
+
+    Note:
+        - Computes remaining positions by subtracting other neurons' positions
+        - Prints debug information about position counts
+        - Function implementation may be incomplete
+    """
     for i in range(0,  len(list)):
         single_seg = list[i]
         position = single_seg['position']
@@ -629,8 +1022,28 @@ def remain_mask_test_list(list):
     return position
 
 
-# position = np.argwhere(cc_mask == i)
 def add_remain_mask_list(list, all_remain_mask):
+    """
+    Add remaining mask positions to neuron dictionaries.
+
+    Extracts pixel positions from remaining mask regions and adds them to
+    each neuron dictionary under the 'remain_position' key.
+
+    Args:
+        list (list): List of neuron dictionaries to update
+        all_remain_mask (np.ndarray): Remaining mask stack with shape (N, H, W)
+            where N matches length of list
+
+    Returns:
+        list: List of neuron dictionaries with added 'remain_position' key
+            Each 'remain_position' contains array of [row, col] coordinates
+            for non-overlapping regions
+
+    Note:
+        - Uses np.argwhere to find all positions where remain_mask == 1
+        - Adds 'remain_position' key to each neuron dictionary
+        - Positions are in [row, col] format
+    """
     # print(list[0])
     for i in range(0, len(list)):
         remain_mask = all_remain_mask[i,:,:]
@@ -648,6 +1061,31 @@ def neuron_max_filter(w_g_neuron_list,
                     all_neuron_mask,
                     raw_image_max,
                     max_thres =0.01):
+    """
+    Filter neurons based on maximum intensity value in their mask region.
+
+    Removes neurons whose maximum intensity value (within their mask region)
+    is below a threshold relative to the global maximum intensity.
+
+    Args:
+        w_g_neuron_list (list): List of neuron dictionaries
+        all_neuron_mask (np.ndarray): Binary mask stack with shape (N, H, W)
+            where N matches length of w_g_neuron_list
+        raw_image_max (np.ndarray): Maximum projection image with shape (H, W)
+            Maximum intensity across time dimension
+        max_thres (float, optional): Threshold as fraction of global maximum.
+            Default is 0.01 (1% of max intensity).
+
+    Returns:
+        list: Filtered list of neuron dictionaries
+            Only includes neurons with max_value > max_thres * global_max
+            Each neuron dictionary has added 'max_value' key
+
+    Note:
+        - Computes max intensity within each neuron's mask region
+        - Filters neurons below threshold
+        - Adds 'max_value' key to each neuron dictionary
+    """
     max_thres_value = np.max(raw_image_max)*max_thres
     new_w_g_neuron_list = []
     for i in range(0, len(w_g_neuron_list)):
@@ -669,6 +1107,29 @@ def neuron_max_filter(w_g_neuron_list,
 def delete_edge_neuron(w_g_neuron_list,
                     all_neuron_mask,
                     edge_value=10):
+    """
+    Remove neurons located too close to image edges.
+
+    Filters out neurons whose centroids are within edge_value pixels of
+    image boundaries, as these are likely incomplete or artifacts.
+
+    Args:
+        w_g_neuron_list (list): List of neuron dictionaries, each containing
+            'centroid' key with [row, col] coordinates
+        all_neuron_mask (np.ndarray): Binary mask stack with shape (N, H, W)
+            for reference dimensions
+        edge_value (int, optional): Edge margin in pixels. Default is 10.
+
+    Returns:
+        list: Filtered list of neuron dictionaries
+            Only includes neurons with centroids away from edges by at least
+            edge_value pixels
+
+    Note:
+        - Checks that centroid is at least edge_value pixels from all edges
+        - Removes neurons too close to top, bottom, left, or right edges
+        - Helps remove incomplete neurons at image boundaries
+    """
     new_w_g_neuron_list = []
     size_h = all_neuron_mask.shape[1]
     size_w = all_neuron_mask.shape[2]
@@ -688,6 +1149,30 @@ def delete_edge_neuron(w_g_neuron_list,
 
 
 def list2mask(final_mask_list, mask_h, mask_w):
+    """
+    Convert list of neuron dictionaries to labeled mask images.
+
+    Creates two mask representations: a single combined mask with sequential
+    labels, and a 3D stack with each neuron in a separate slice.
+
+    Args:
+        final_mask_list (list): List of neuron dictionaries, each containing
+            'position' key with list of [row, col] coordinates
+        mask_h (int): Height of output masks
+        mask_w (int): Width of output masks
+
+    Returns:
+        tuple: (final_mask, whole_mask)
+            - final_mask (np.ndarray): Combined mask with shape (H, W)
+              Each neuron has a unique sequential label (1, 2, 3, ...)
+            - whole_mask (np.ndarray): Stack of individual masks with shape (N, H, W)
+              Each slice contains one neuron's mask with its label value
+
+    Note:
+        - Labels start from 1 (background is 0)
+        - Overlapping neurons will have overlapping labels in final_mask
+        - Each neuron's mask is stored separately in whole_mask
+    """
     final_mask = np.zeros((mask_h, mask_w))
     whole_mask = np.zeros((len(final_mask_list), mask_h, mask_w))
     for i in range(0, len(final_mask_list)):
@@ -704,6 +1189,22 @@ def list2mask(final_mask_list, mask_h, mask_w):
 
 
 def centroid_distance(centroid1, centroid2):
+    """
+    Calculate Euclidean distance between two centroids.
+
+    Computes the 2D Euclidean distance between two centroid coordinates.
+
+    Args:
+        centroid1 (np.ndarray or list): First centroid coordinates [row, col]
+        centroid2 (np.ndarray or list): Second centroid coordinates [row, col]
+
+    Returns:
+        float: Euclidean distance between the two centroids in pixels
+
+    Note:
+        - Formula: sqrt((row1-row2)² + (col1-col2)²)
+        - Used for spatial distance calculations between neurons
+    """
     a = centroid1[0]-centroid2[0]
     b = centroid1[1]-centroid2[1]
     distance = (a**2+b**2)**0.5
@@ -711,6 +1212,26 @@ def centroid_distance(centroid1, centroid2):
 
 
 def list_union(list1,list2):
+    """
+    Compute union of two lists (combine unique elements).
+
+    Creates a new list containing all unique elements from both input lists.
+    Elements from list1 that are not in list2 are added to the result.
+
+    Args:
+        list1 (list): First list
+        list2 (list): Second list (base list)
+
+    Returns:
+        list: Union of list1 and list2
+            Contains all elements from list2 plus elements from list1
+            that are not already in list2
+
+    Note:
+        - Preserves order: list2 elements first, then list1 elements
+        - Does not remove duplicates within each list
+        - Only ensures elements from list1 are not duplicated in result
+    """
     union = list2
     for i in range(0, len(list1)):
         a = list1[i]
@@ -720,6 +1241,25 @@ def list_union(list1,list2):
 
 
 def list_inter(list1,list2):
+    """
+    Compute intersection of two lists (common elements).
+
+    Creates a new list containing only elements that appear in both input lists.
+
+    Args:
+        list1 (list): First list
+        list2 (list): Second list
+
+    Returns:
+        list: Intersection of list1 and list2
+            Contains only elements that are in both lists
+            Order follows list1
+
+    Note:
+        - Preserves order from list1
+        - Only includes elements present in both lists
+        - Used for finding common elements between neuron position lists
+    """
     inter = []
     for i in range(0, len(list1)):
         a = list1[i]
@@ -730,6 +1270,28 @@ def list_inter(list1,list2):
 
 
 def listAddcontours_Laplacian(list, mask_h, mask_w,width=3):
+    """
+    Add Laplacian-based contours to neuron list.
+
+    Computes contours for each neuron using Laplacian edge detection.
+    Creates a mask from neuron positions, applies Laplacian filter, and
+    extracts contours from the filtered result.
+
+    Args:
+        list (list): List of neuron dictionaries, each containing 'position' key
+        mask_h (int): Height of mask
+        mask_w (int): Width of mask
+        width (int, optional): Width of Laplacian kernel. Default is 3.
+
+    Returns:
+        list: List of neuron dictionaries with added 'contours' key
+            Each dictionary contains 'contours' with extracted contour data
+
+    Note:
+        - Uses 3x3 Laplacian kernel for edge detection
+        - Applies convolution with custom kernel
+        - Extracts contours from Laplacian-filtered mask
+    """
     new_list = []
     print('len(list) -----> ',len(list))
     for aaaaa in range(0, len(list)):

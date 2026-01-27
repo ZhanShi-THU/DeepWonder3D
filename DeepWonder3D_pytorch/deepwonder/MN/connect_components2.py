@@ -3,6 +3,33 @@ import numpy as np
 import scipy.io as scio
 
 def neighbor_label_list(i, j, label_matrix, binary_img, neighbor_hoods):
+    """
+    Get list of unique neighbor labels for a given pixel position.
+
+    Examines neighboring pixels (4- or 8-connectivity) and collects all unique
+    non-zero labels from foreground neighbors.
+
+    Args:
+        i (int): Row coordinate of the pixel
+        j (int): Column coordinate of the pixel
+        label_matrix (np.ndarray): Label matrix with shape (H, W)
+            Contains current label assignments for all pixels
+        binary_img (np.ndarray): Binary image with shape (H, W)
+            Pixels != 0 are considered foreground
+        neighbor_hoods (str): Connectivity type, either 'NEIGHBOR_HOODS_4' for
+            4-connectivity or 'NEIGHBOR_HOODS_8' for 8-connectivity
+
+    Returns:
+        list: List of unique neighbor label values (integers)
+            Only includes labels from foreground neighbors (pixel != 0)
+            Empty list if no foreground neighbors found
+
+    Note:
+        - For 4-connectivity: checks up, down, left, right neighbors
+        - For 8-connectivity: includes diagonal neighbors as well
+        - Only includes labels from foreground pixels (binary_img != 0)
+        - Duplicate labels are automatically removed
+    """
     nb_label_list=[]
 
     if neighbor_hoods == 'NEIGHBOR_HOODS_4':
@@ -85,6 +112,34 @@ def neighbor_label_list(i, j, label_matrix, binary_img, neighbor_hoods):
 
 
 def New_Two_Pass(binary_img: np.array, neighbor_hoods):
+    """
+    Perform optimized two-pass connected component labeling algorithm.
+
+    Labels all connected components in a binary image using an improved
+    two-pass algorithm that resolves label equivalences on-the-fly during
+    the first pass.
+
+    Args:
+        binary_img (np.ndarray): Binary image with shape (H, W)
+            Pixels != 0 are considered foreground, pixels == 0 are background
+        neighbor_hoods (str): Connectivity type, either 'NEIGHBOR_HOODS_4' for
+            4-connectivity or 'NEIGHBOR_HOODS_8' for 8-connectivity
+
+    Returns:
+        np.ndarray: Labeled image with shape (H, W)
+            Each connected component has a unique sequential label (1, 2, 3, ...)
+            Background pixels remain 0
+
+    Raises:
+        ValueError: If neighbor_hoods is not 'NEIGHBOR_HOODS_4' or 'NEIGHBOR_HOODS_8'
+
+    Note:
+        - Single-pass algorithm that resolves label equivalences immediately
+        - When multiple neighbor labels are found, assigns minimum label and
+          merges all equivalent labels in the label matrix
+        - More efficient than classic two-pass algorithm for some cases
+        - Handles edge cases where neighbors have label 0 (background)
+    """
     if neighbor_hoods == 'NEIGHBOR_HOODS_4':
         pass
     elif neighbor_hoods == 'NEIGHBOR_HOODS_8':

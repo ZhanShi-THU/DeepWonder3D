@@ -32,6 +32,26 @@ from deepwonder.utils import save_img_train, save_para_dict, UseStyle, save_img,
 
 class test_seg_net_acc():
     def __init__(self, SEG_para):
+        """
+        Testing wrapper for the 3D segmentation (SEG) network.
+
+        This class configures a pretrained 3D UNet segmentation model, prepares
+        test data patches, runs inference over full volumes, and stitches the
+        patch-wise predictions back into complete segmentation volumes which
+        are then saved to disk.
+
+        Args:
+            SEG_para (dict): Configuration dictionary for testing. Common keys
+                include:
+                - ``GPU``: Comma-separated GPU indices to use.
+                - ``SEG_output_dir`` / ``SEG_output_folder``: Output paths.
+                - ``SEG_datasets_path`` / ``SEG_datasets_folder``: Input data
+                  root and folder.
+                - ``SEG_img_w``, ``SEG_img_h``, ``SEG_img_s``: 3D patch size.
+                - ``SEG_gap_*``: Overlap configuration for patch stitching.
+                - ``SEG_pth_path``, ``SEG_model``, ``SEG_pth_index``:
+                  Pretrained checkpoint location.
+        """
         self.GPU = '0,1'
         self.SEG_output_dir = './/test_results'
         self.SEG_output_folder = ''
@@ -65,6 +85,12 @@ class test_seg_net_acc():
     #########################################################################
     #########################################################################
     def make_folder(self):
+        """
+        Create output folder for SEG test results if it does not exist.
+
+        The folder path is built from ``SEG_output_dir`` and
+        ``SEG_output_folder`` and stored in ``self.SEG_output_path``.
+        """
         current_time = 'SEG_' + self.SEG_datasets_folder + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M")
         self.SEG_output_path = self.SEG_output_dir + '//' + self.SEG_output_folder  # current_time.replace('//','_')
         if not os.path.exists(self.SEG_output_dir):
@@ -75,6 +101,13 @@ class test_seg_net_acc():
     #########################################################################
     #########################################################################
     def save_para(self):
+        """
+        Save SEG testing configuration to YAML and TXT files.
+
+        The method writes the current instance attributes (excluding the
+        network instance) into a YAML and a text file inside
+        ``self.SEG_output_path`` for reproducibility.
+        """
         yaml_dict = self.__dict__.copy()
         del yaml_dict['SEG_net']
         # del yaml_dict['optimizer'] 
@@ -90,6 +123,18 @@ class test_seg_net_acc():
     #########################################################################
     #########################################################################
     def reset_para(self, SEG_para):
+        """
+        Reset instance attributes from parameter dictionary and optional model YAML.
+
+        First updates attributes from ``SEG_para`` (if the attribute exists on
+        the instance). If ``if_load_para`` is enabled, it also reads the
+        model-specific YAML file and overrides normalization, channels, and
+        temporal depth configuration.
+
+        Args:
+            SEG_para (dict): Parameter dictionary provided by the caller to
+                override default values (paths, patch sizes, GPU indices, etc.).
+        """
         for key, value in SEG_para.items():
             if hasattr(self, key):
                 setattr(self, key, value)
@@ -112,6 +157,15 @@ class test_seg_net_acc():
     #########################################################################
     #########################################################################
     def initialize_model(self):
+        """
+        Initialize the SEG network and load pretrained weights.
+
+        This method builds the 3D UNet segmentation model, wraps it in
+        ``torch.nn.DataParallel``, moves it to GPU (if configured), and
+        loads weights from ``SEG_pth_path / SEG_model / SEG_pth_index``,
+        handling both with and without 'module.' prefixes in state dict keys.
+        The final configuration is then saved via ``save_para``.
+        """
         self.if_realign = False
         self.SEG_net = SEG_Network_3D_Unet(UNet_type='Unet4_no_end_UNet3D',
                                            in_channels=self.SEG_in_c,
@@ -166,6 +220,17 @@ class test_seg_net_acc():
     #########################################################################
     #########################################################################
     def generate_patch(self):
+        """
+        Prepare metadata for patch-wise SEG inference.
+
+        Depending on ``self.data_process_lm``, this uses low-memory
+        preprocessing utilities to construct:
+        - ``name_list``: list of volume IDs.
+        - ``patch_name_list``: mapping from volume ID to patch IDs.
+        - ``img_dir_list`` or ``img_list``: mapping from volume ID to image
+          file path or loaded array.
+        - ``coordinate_list``: mapping from volume ID to patch coordinates.
+        """
         self.data_process_lm = 1
         if not self.data_process_lm:
             self.name_list, self.patch_name_list, self.img_list, self.coordinate_list = \
@@ -178,6 +243,14 @@ class test_seg_net_acc():
     #########################################################################
     #########################################################################
     def test(self):
+        """
+        Run SEG inference over the full test dataset and save predictions.
+
+        The method iterates over all volumes, prepares a 3D array to store
+        per-slice predictions, processes input in overlapping patches through
+        the segmentation network, and writes the stitched prediction volume
+        to disk using ``save_img``.
+        """
 
         prev_time = time.time()
         iteration_num = 0
@@ -235,8 +308,10 @@ class test_seg_net_acc():
                 if if_print_gpu_use:
                     from deepwonder.utils import get_gpu_mem_info
                     gpu_mem_total, gpu_mem_used, gpu_mem_free = get_gpu_mem_info(gpu_id=0)
-                    print(r'当前显卡显存使用情况：总共 {} MB， 已经使用 {} MB， 剩余 {} MB'
-                          .format(gpu_mem_total, gpu_mem_used, gpu_mem_free))
+                    print(
+                        r'GPU memory usage: total {} MB, used {} MB, free {} MB'
+                        .format(gpu_mem_total, gpu_mem_used, gpu_mem_free)
+                    )
 
                 im_np = im.cpu().detach().numpy()
                 SEG_out_np = SEG_out.cpu().detach().numpy()

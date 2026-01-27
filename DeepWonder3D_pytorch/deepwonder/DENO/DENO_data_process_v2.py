@@ -8,6 +8,25 @@ from torch.utils.data import Dataset
 
 
 def img_remove_time_ave(img):
+    """
+    Remove temporal average from image stack.
+
+    Subtracts the temporal mean (average across time dimension) from each frame
+    in the image stack to remove static background and emphasize temporal
+    variations.
+
+    Args:
+        img (np.ndarray): Input image stack with shape (T, H, W)
+            where T is number of time frames, H is height, W is width
+
+    Returns:
+        np.ndarray: Image stack with temporal mean removed, same shape as input
+            Each frame has the temporal average subtracted
+
+    Note:
+        - Computes mean across axis 0 (time dimension)
+        - Broadcasts the mean to all frames before subtraction
+    """
     noise_im_ave_single = np.mean(img, axis=0)
     noise_im_ave = np.zeros(img.shape)
     for i in range(0, img.shape[0]):
@@ -18,12 +37,40 @@ def img_remove_time_ave(img):
 ###############################
 ###############################
 class testset_DENO(Dataset):
+    """
+    PyTorch Dataset class for denoising test data.
+
+    Provides access to image patches for denoising model testing. Each sample
+    consists of an image patch, its coordinates, and patch name.
+    """
     def __init__(self, img, per_patch_list, per_coor_list):
+        """
+        Initialize the test dataset.
+
+        Args:
+            img (np.ndarray): Full image stack with shape (T, H, W)
+            per_patch_list (list): List of patch names/identifiers
+            per_coor_list (dict): Dictionary mapping patch names to coordinate
+                dictionaries containing 'init_h', 'end_h', 'init_w', 'end_w',
+                'init_s', 'end_s' keys
+        """
         self.per_patch_list = per_patch_list
         self.per_coor_list = per_coor_list
         self.img = img
 
     def __getitem__(self, index):
+        """
+        Get a single test sample.
+
+        Args:
+            index (int): Index of the sample to retrieve
+
+        Returns:
+            tuple: (img_patch, per_coor, patch_name)
+                - img_patch (torch.Tensor): Image patch with shape (1, T', H', W')
+                - per_coor (dict): Coordinate dictionary for the patch
+                - patch_name (str): Name/identifier of the patch
+        """
         patch_name = self.per_patch_list[index]
         # print('patch_name -----> ',patch_name)
         # print('per_coor_list -----> ',self.per_coor_list)
@@ -46,6 +93,33 @@ class testset_DENO(Dataset):
 ###############################
 ###############################
 def test_preprocess_lessMemory_DENO(args):
+    """
+    Preprocess test images for denoising with memory-efficient patch extraction.
+
+    Loads test images, normalizes them, and generates overlapping patches for
+    denoising inference. Keeps full images in memory for efficient patch access.
+
+    Args:
+        args: Configuration object containing:
+            - DENO_img_h, DENO_img_w, DENO_img_s: Patch dimensions
+            - DENO_gap_h, DENO_gap_w, DENO_gap_s: Gap sizes for overlap
+            - DENO_datasets_path: Path to datasets directory
+            - DENO_datasets_folder: Name of datasets folder
+            - DENO_select_img_num: Number of frames to select (from end)
+            - DENO_norm_factor: Normalization factor
+
+    Returns:
+        tuple: (name_list, patch_name_list, img_list, coordinate_list)
+            - name_list (list): List of image filenames
+            - patch_name_list (dict): Dictionary mapping image names to patch name lists
+            - img_list (dict): Dictionary mapping image names to full image arrays
+            - coordinate_list (dict): Dictionary mapping image names to coordinate dictionaries
+
+    Note:
+        - Images are normalized by dividing by normalize_factor
+        - If image has more frames than select_img_num, only last N frames are used
+        - Patches are generated with overlap regions for seamless reconstruction
+    """
     img_h = args.DENO_img_h
     img_w = args.DENO_img_w
     img_s2 = args.DENO_img_s
@@ -127,6 +201,35 @@ def test_preprocess_lessMemory_DENO(args):
 ###############################
 ###############################
 def test_preprocess_lessMemory_DENO_lm(args):
+    """
+    Preprocess test images for denoising with memory-efficient lazy loading.
+
+    Similar to test_preprocess_lessMemory_DENO but stores file paths instead of
+    full images in memory, enabling processing of very large datasets. Images
+    are loaded on-demand during inference.
+
+    Args:
+        args: Configuration object containing:
+            - DENO_img_h, DENO_img_w, DENO_img_s: Patch dimensions
+            - DENO_gap_h, DENO_gap_w, DENO_gap_s: Gap sizes for overlap
+            - DENO_datasets_path: Path to datasets directory
+            - DENO_datasets_folder: Name of datasets folder
+            - DENO_select_img_num: Number of frames to select (from end)
+            - DENO_norm_factor: Normalization factor
+            - denoise_index: Index for batch processing (processes 10 images per batch)
+
+    Returns:
+        tuple: (name_list, patch_name_list, img_dir_list, coordinate_list)
+            - name_list (list): List of image filenames
+            - patch_name_list (dict): Dictionary mapping image names to patch name lists
+            - img_dir_list (dict): Dictionary mapping image names to file paths
+            - coordinate_list (dict): Dictionary mapping image names to coordinate dictionaries
+
+    Note:
+        - Processes images in batches based on denoise_index (10 images per batch)
+        - Stores file paths instead of image data to save memory
+        - Images are loaded on-demand during dataset iteration
+    """
     img_h = args.DENO_img_h
     img_w = args.DENO_img_w
     img_s2 = args.DENO_img_s
@@ -219,6 +322,43 @@ def get_test_patch_list(im_name,
                         img_w, img_h, img_s2, 
                         gap_w, gap_h, gap_s2, 
                         cut_w, cut_h, cut_s):
+    """
+    Generate patch list and coordinates for test image processing.
+
+    Creates a grid of overlapping patches covering the entire image volume.
+    Each patch has coordinates for both the full image stack and the patch
+    itself, accounting for overlap regions.
+
+    Args:
+        im_name (str): Image filename (without extension)
+        whole_w (int): Full image width
+        whole_h (int): Full image height
+        whole_s (int): Full image depth (time frames)
+        img_w (int): Patch width
+        img_h (int): Patch height
+        img_s2 (int): Patch depth
+        gap_w (int): Gap size in width dimension
+        gap_h (int): Gap size in height dimension
+        gap_s2 (int): Gap size in depth dimension
+        cut_w (float): Cut size in width (overlap region)
+        cut_h (float): Cut size in height (overlap region)
+        cut_s (float): Cut size in depth (overlap region)
+
+    Returns:
+        tuple: (single_im_coordinate_list, sub_patch_name_list)
+            - single_im_coordinate_list (dict): Dictionary mapping patch names to
+              coordinate dictionaries with keys:
+              'init_h', 'end_h', 'init_w', 'end_w', 'init_s', 'end_s' (patch bounds)
+              'stack_start_*', 'stack_end_*' (full image coordinates)
+              'patch_start_*', 'patch_end_*' (patch coordinates accounting for overlap)
+            - sub_patch_name_list (list): List of patch names in format
+              '{im_name}_x{init_h}_y{init_w}_z{init_s}'
+
+    Note:
+        - Patches are generated with overlap to enable seamless reconstruction
+        - Edge patches are handled specially to ensure full coverage
+        - Number of patches calculated as: ceil((whole_dim - img_dim + gap_dim) / gap_dim)
+    """
     num_w = math.ceil((whole_w-img_w+gap_w)/gap_w)
     num_h = math.ceil((whole_h-img_h+gap_h)/gap_h)
     num_s = math.ceil((whole_s-img_s2+gap_s2)/gap_s2)

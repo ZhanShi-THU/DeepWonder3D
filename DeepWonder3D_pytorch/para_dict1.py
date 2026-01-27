@@ -1,6 +1,22 @@
 import numpy as np
 
 def get_data_fingerprint(data_path):
+    """
+    Scan a directory and collect shape information for all TIFF images.
+
+    Args:
+        data_path (str): Filesystem path to the directory that contains
+            ``.tif`` image files.
+
+    Returns:
+        tuple: ``(im_w_list, im_h_list, im_s_list, min_im_w, min_im_h, min_im_s)`` where
+            - ``im_w_list`` (list[int]): Width of each image in pixels.
+            - ``im_h_list`` (list[int]): Height of each image in pixels.
+            - ``im_s_list`` (list[int]): Number of frames (depth) of each image.
+            - ``min_im_w`` (int): Minimal width among all images.
+            - ``min_im_h`` (int): Minimal height among all images.
+            - ``min_im_s`` (int): Minimal number of frames among all images.
+    """
     im_w_list = []
     im_h_list = []
     im_s_list = []
@@ -28,6 +44,20 @@ def get_data_fingerprint(data_path):
 ############ DENO #########################################
 ###########################################################
 def config_DENO_para(DENO_para, DENO_path, GPU_M=48):
+    """
+    Configure denoising (DENO) parameters from dataset statistics.
+
+    Args:
+        DENO_para (dict): Parameter dictionary for the denoising module that
+            will be updated in-place with tile and overlap information.
+        DENO_path (str): Filesystem path to the denoising dataset directory.
+        GPU_M (int, optional): Approximate GPU memory in GB used to calculate
+            a safe batch size. Defaults to ``48``.
+
+    Returns:
+        dict: The updated ``DENO_para`` dictionary containing image width,
+        height, depth, batch size, and overlap fields.
+    """
     im_w_list, im_h_list, im_s_list, \
     min_im_w, min_im_h, min_im_s \
     = get_data_fingerprint(DENO_path)
@@ -111,6 +141,20 @@ DENO_para = { 'GPU' : '0,1',
 ############ SR #########################################
 ###########################################################
 def config_SR_para(SR_para, SR_path, GPU_M=48):
+    """
+    Configure super-resolution (SR) parameters from dataset statistics.
+
+    Args:
+        SR_para (dict): Super-resolution parameter dictionary that will be
+            updated with spatial window, overlap, and temporal depth.
+        SR_path (str): Filesystem path to the SR dataset directory.
+        GPU_M (int, optional): Approximate GPU memory in GB (kept for API
+            symmetry, currently unused). Defaults to ``48``.
+
+    Returns:
+        dict: The updated ``SR_para`` dictionary with ``img_w``, ``img_h``,
+        ``gap_w``, ``gap_h``, and ``img_s`` fields set.
+    """
     im_w_list, im_h_list, im_s_list, \
     min_im_w, min_im_h, min_im_s \
     = get_data_fingerprint(SR_path)
@@ -184,6 +228,20 @@ SR_para = { 'GPU' : '1',
 ############ RMBG #########################################
 ###########################################################
 def config_RMBG_para(RMBG_para, RMBG_path, GPU_M=48):
+    """
+    Configure background removal (RMBG) parameters from dataset statistics.
+
+    Args:
+        RMBG_para (dict): Background-removal parameter dictionary to be
+            updated with 3D patch dimensions, batch size, and overlap.
+        RMBG_path (str): Filesystem path to the RMBG dataset directory.
+        GPU_M (int, optional): Approximate GPU memory in GB used to estimate
+            a safe batch size. Defaults to ``48``.
+
+    Returns:
+        dict: The updated ``RMBG_para`` dictionary containing ``RMBG_img_w``,
+        ``RMBG_img_h``, ``RMBG_img_s`` and related gap fields.
+    """
     im_w_list, im_h_list, im_s_list, \
     min_im_w, min_im_h, min_im_s \
     = get_data_fingerprint(RMBG_path)
@@ -258,6 +316,21 @@ RMBG_para = { 'GPU' : '0,1',
 ############ SEG #########################################
 ###########################################################
 def config_SEG_para(SEG_para, SEG_path, GPU_M=48):
+    """
+    Configure segmentation (SEG) parameters from dataset statistics.
+
+    Args:
+        SEG_para (dict): Segmentation parameter dictionary that will be
+            updated with tile size, overlap, and batch size.
+        SEG_path (str): Filesystem path to the segmentation dataset
+            directory.
+        GPU_M (int, optional): Approximate GPU memory in GB used when
+            computing a safe batch size. Defaults to ``48``.
+
+    Returns:
+        dict: The updated ``SEG_para`` dictionary with ``SEG_img_w``,
+        ``SEG_img_h``, ``SEG_gap_w``, ``SEG_gap_h``, and ``SEG_batch_size``.
+    """
     im_w_list, im_h_list, im_s_list, \
     min_im_w, min_im_h, min_im_s \
     = get_data_fingerprint(SEG_path)

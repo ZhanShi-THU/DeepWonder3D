@@ -33,6 +33,25 @@ from deepwonder.utils import save_img_train, save_para_dict, UseStyle, save_img,
 
 class test_rmbg_net_acc():
     def __init__(self, RMBG_para):
+        """
+        Testing wrapper for the 3D background removal (RMBG) network.
+
+        This class configures a pretrained RMBG model, prepares test data
+        patches, runs inference over a full volume, and stitches patches back
+        into full-size prediction volumes which are saved to disk.
+
+        Args:
+            RMBG_para (dict): Configuration dictionary for testing. Expected
+                keys include, but are not limited to:
+                - ``GPU``: Comma-separated GPU indices to use.
+                - ``RMBG_output_dir`` / ``RMBG_output_folder``: Output paths.
+                - ``RMBG_datasets_path`` / ``RMBG_datasets_folder``: Input
+                  dataset root and folder name.
+                - ``RMBG_img_w``, ``RMBG_img_h``, ``RMBG_img_s``: 3D patch size.
+                - ``RMBG_gap_*``: Overlap configuration for patch stitching.
+                - ``RMBG_pth_path``, ``RMBG_model``, ``RMBG_pth_index``:
+                  Pretrained checkpoint location.
+        """
         self.GPU = '0,1'
         self.RMBG_output_dir = './/test_results'
         self.RMBG_output_folder = ''
@@ -67,6 +86,12 @@ class test_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def make_folder(self):
+        """
+        Create output folder for RMBG test results if it does not exist.
+
+        The folder path is built from ``RMBG_output_dir`` and
+        ``RMBG_output_folder`` and stored in ``self.RMBG_output_path``.
+        """
         current_time = 'RMBG_' + self.RMBG_datasets_folder + '_' + datetime.datetime.now().strftime("%Y%m%d%H%M")
         self.RMBG_output_path = self.RMBG_output_dir + '//' + self.RMBG_output_folder
         # current_time.replace('//','_')
@@ -78,6 +103,13 @@ class test_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def save_para(self):
+        """
+        Save RMBG testing configuration to YAML and TXT files.
+
+        The method writes the current instance attributes (excluding the
+        network instance) into a YAML and a text file inside
+        ``self.RMBG_output_path`` for reproducibility.
+        """
         yaml_dict = self.__dict__.copy()
         del yaml_dict['RMBG_net']
         # del yaml_dict['optimizer'] 
@@ -93,6 +125,17 @@ class test_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def reset_para(self, RMBG_para):
+        """
+        Reset instance attributes from parameter dictionary and model YAML.
+
+        First updates attributes from ``RMBG_para`` (if they already exist on
+        the instance), then loads the YAML file associated with the pretrained
+        model to recover normalization and channel configuration.
+
+        Args:
+            RMBG_para (dict): Parameter dictionary provided by the caller to
+                override default values (paths, patch sizes, GPU indices, etc.).
+        """
         for key, value in RMBG_para.items():
             if hasattr(self, key):
                 setattr(self, key, value)
@@ -113,6 +156,14 @@ class test_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def initialize_model(self):
+        """
+        Initialize the RMBG network and load pretrained weights.
+
+        This method builds the 3D UNet model, wraps it in
+        ``torch.nn.DataParallel``, moves it to GPU (if configured), and
+        loads weights from ``RMBG_pth_path / RMBG_model / RMBG_pth_index``.
+        The final configuration is then saved via ``save_para``.
+        """
         self.if_realign = False
         self.RMBG_net = Network_3D_Unet(UNet_type='UNet3D_squeeze',
                                         in_channels=self.RMBG_in_c,
@@ -137,6 +188,17 @@ class test_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def generate_patch(self):
+        """
+        Prepare metadata for patch-wise RMBG inference.
+
+        Depending on ``self.data_process_lm``, this uses low-memory
+        preprocessing utilities to construct:
+        - ``name_list``: list of volume IDs.
+        - ``patch_name_list``: mapping from volume ID to patch IDs.
+        - ``img_dir_list`` or ``img_list``: mapping from volume ID to image
+          file path or loaded array.
+        - ``coordinate_list``: mapping from volume ID to patch coordinates.
+        """
         self.data_process_lm = 1
         if not self.data_process_lm:
             self.name_list, self.patch_name_list, self.img_list, self.coordinate_list \
@@ -149,6 +211,14 @@ class test_rmbg_net_acc():
     #########################################################################
     #########################################################################
     def test(self):
+        """
+        Run RMBG inference over the full test dataset and save predictions.
+
+        The method iterates over all volumes, constructs a blank output volume,
+        processes input in overlapping patches through the RMBG network, and
+        stitches predictions back into the full-size volume before saving the
+        result as a TIFF stack.
+        """
         # torch.multiprocessing.set_start_method('spawn')
         prev_time = time.time()
         iteration_num = 0
@@ -218,8 +288,10 @@ class test_rmbg_net_acc():
                 if if_print_gpu_use:
                     from deepwonder.utils import get_gpu_mem_info
                     gpu_mem_total, gpu_mem_used, gpu_mem_free = get_gpu_mem_info(gpu_id=0)
-                    print(r'当前显卡显存使用情况：总共 {} MB， 已经使用 {} MB， 剩余 {} MB'
-                          .format(gpu_mem_total, gpu_mem_used, gpu_mem_free))
+                    print(
+                        r'GPU memory usage: total {} MB, used {} MB, free {} MB'
+                        .format(gpu_mem_total, gpu_mem_used, gpu_mem_free)
+                    )
                 ################################################################################################################
                 per_epoch_len = len(per_coor_list) // self.RMBG_batch_size
                 batches_done = im_index * per_epoch_len + iteration + 1
