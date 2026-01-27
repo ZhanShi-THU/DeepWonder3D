@@ -2,23 +2,57 @@ import torch.nn as nn
 import torch
 from torch import autograd
 
-#把常用的2个卷积操作简单封装下
+
 class DoubleConv(nn.Module):
+    """
+    Two-layer 2D convolutional block with BatchNorm and ReLU.
+
+    This module is a common building block for U-Net style architectures:
+    Conv2d -> BatchNorm2d -> ReLU -> Conv2d -> BatchNorm2d -> ReLU.
+
+    Args:
+        in_ch (int): Number of input channels.
+        out_ch (int): Number of output channels.
+    """
+
     def __init__(self, in_ch, out_ch):
         super(DoubleConv, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 3, padding=1),
-            nn.BatchNorm2d(out_ch), #添加了BN层
+            nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True),
             nn.Conv2d(out_ch, out_ch, 3, padding=1),
             nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """
+        Apply the double convolution block.
+
+        Args:
+            input (torch.Tensor): Input tensor of shape
+                ``(batch, in_ch, height, width)``.
+
+        Returns:
+            torch.Tensor: Output tensor of shape
+            ``(batch, out_ch, height, width)``.
+        """
         return self.conv(input)
 
+
 class Unet(nn.Module):
+    """
+    Classic 2D U-Net for segmentation.
+
+    This is a 5-level U-Net encoder-decoder with skip connections and a
+    final sigmoid activation for binary segmentation.
+
+    Args:
+        in_ch (int): Number of input channels.
+        out_ch (int): Number of output channels.
+    """
+
     def __init__(self, in_ch, out_ch):
         super(Unet, self).__init__()
         self.conv1 = DoubleConv(in_ch, 64)
@@ -30,7 +64,6 @@ class Unet(nn.Module):
         self.conv4 = DoubleConv(256, 512)
         self.pool4 = nn.MaxPool2d(2)
         self.conv5 = DoubleConv(512, 1024)
-        # 逆卷积，也可以使用上采样(保证k=stride,stride即上采样倍数)
         self.up6 = nn.ConvTranspose2d(1024, 512, 2, stride=2)
         self.conv6 = DoubleConv(1024, 512)
         self.up7 = nn.ConvTranspose2d(512, 256, 2, stride=2)
@@ -41,7 +74,18 @@ class Unet(nn.Module):
         self.conv9 = DoubleConv(128, 64)
         self.conv10 = nn.Conv2d(64, out_ch, 1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the U-Net.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape
+                ``(batch, in_ch, height, width)``.
+
+        Returns:
+            torch.Tensor: Sigmoid-activated logits of shape
+            ``(batch, out_ch, height, width)``.
+        """
         c1 = self.conv1(x)
         p1 = self.pool1(c1)
         c2 = self.conv2(p1)
@@ -68,31 +112,49 @@ class Unet(nn.Module):
         return out
 
 
-
 class Unet4(nn.Module):
+    """
+    4-level 2D U-Net with configurable feature width.
+
+    Args:
+        in_ch (int): Number of input channels.
+        out_ch (int): Number of output channels.
+        f_num (int): Base number of feature channels at the first level.
+    """
+
     def __init__(self, in_ch, out_ch, f_num):
         super(Unet4, self).__init__()
         self.conv1 = DoubleConv(in_ch, f_num)
         self.pool1 = nn.MaxPool2d(2)
-        self.conv2 = DoubleConv(f_num, f_num*2)
+        self.conv2 = DoubleConv(f_num, f_num * 2)
         self.pool2 = nn.MaxPool2d(2)
-        self.conv3 = DoubleConv(f_num*2, f_num*2*2)
+        self.conv3 = DoubleConv(f_num * 2, f_num * 2 * 2)
         self.pool3 = nn.MaxPool2d(2)
-        self.conv4 = DoubleConv(f_num*2*2, f_num*2*2*2)
+        self.conv4 = DoubleConv(f_num * 2 * 2, f_num * 2 * 2 * 2)
         self.pool4 = nn.MaxPool2d(2)
-        self.conv5 = DoubleConv(f_num*2*2*2, f_num*2*2*2*2)
-        # 逆卷积，也可以使用上采样(保证k=stride,stride即上采样倍数)
-        self.up6 = nn.ConvTranspose2d(f_num*2*2*2*2, f_num*2*2*2, 2, stride=2)
-        self.conv6 = DoubleConv(f_num*2*2*2*2, f_num*2*2*2)
-        self.up7 = nn.ConvTranspose2d(f_num*2*2*2, f_num*2*2, 2, stride=2)
-        self.conv7 = DoubleConv(f_num*2*2*2, f_num*2*2)
-        self.up8 = nn.ConvTranspose2d(f_num*2*2, f_num*2, 2, stride=2)
-        self.conv8 = DoubleConv(f_num*2*2, f_num*2)
-        self.up9 = nn.ConvTranspose2d(f_num*2, f_num, 2, stride=2)
-        self.conv9 = DoubleConv(f_num*2, f_num)
+        self.conv5 = DoubleConv(f_num * 2 * 2 * 2, f_num * 2 * 2 * 2 * 2)
+        self.up6 = nn.ConvTranspose2d(f_num * 2 * 2 * 2 * 2, f_num * 2 * 2 * 2, 2, stride=2)
+        self.conv6 = DoubleConv(f_num * 2 * 2 * 2 * 2, f_num * 2 * 2 * 2)
+        self.up7 = nn.ConvTranspose2d(f_num * 2 * 2 * 2, f_num * 2 * 2, 2, stride=2)
+        self.conv7 = DoubleConv(f_num * 2 * 2 * 2, f_num * 2 * 2)
+        self.up8 = nn.ConvTranspose2d(f_num * 2 * 2, f_num * 2, 2, stride=2)
+        self.conv8 = DoubleConv(f_num * 2 * 2, f_num * 2)
+        self.up9 = nn.ConvTranspose2d(f_num * 2, f_num, 2, stride=2)
+        self.conv9 = DoubleConv(f_num * 2, f_num)
         self.conv10 = nn.Conv2d(f_num, out_ch, 1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the 4-level U-Net.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape
+                ``(batch, in_ch, height, width)``.
+
+        Returns:
+            torch.Tensor: Raw logits of shape
+            ``(batch, out_ch, height, width)``.
+        """
         c1 = self.conv1(x)
         p1 = self.pool1(c1)
         c2 = self.conv2(p1)
@@ -115,48 +177,52 @@ class Unet4(nn.Module):
         merge9 = torch.cat([up_9, c1], dim=1)
         c9 = self.conv9(merge9)
         c10 = self.conv10(c9)
-        # out = nn.Sigmoid()(c10)
         out = c10
         return out
-        # return c10
+
 
 class Unet3(nn.Module):
+    """
+    3-level 2D U-Net variant used in temporal-spatial networks.
+
+    Compared to ``Unet4``, this architecture has one fewer encoder/decoder
+    stage and uses a symmetric layout for skip connections.
+
+    Args:
+        in_ch (int): Number of input channels.
+        out_ch (int): Number of output channels.
+        f_num (int): Base number of feature channels at the first level.
+    """
+
     def __init__(self, in_ch, out_ch, f_num):
         super(Unet3, self).__init__()
-        '''
         self.conv1 = DoubleConv(in_ch, f_num)
         self.pool1 = nn.MaxPool2d(2)
-        self.conv2 = DoubleConv(f_num, f_num*2)
+        self.conv2 = DoubleConv(f_num, f_num * 2)
         self.pool2 = nn.MaxPool2d(2)
-        self.conv3 = DoubleConv(f_num*2, f_num*2*2)
+        self.conv3 = DoubleConv(f_num * 2, f_num * 2 * 2)
         self.pool3 = nn.MaxPool2d(2)
-        self.conv4 = DoubleConv(f_num*2*2, f_num*2*2*2)
-        # 逆卷积，也可以使用上采样(保证k=stride,stride即上采样倍数)
-        self.up7 = nn.ConvTranspose2d(f_num*2*2*2, f_num*2*2, 2, stride=2)
-        self.conv7 = DoubleConv(f_num*2*2*2, f_num*2*2)
-        self.up8 = nn.ConvTranspose2d(f_num*2*2, f_num*2, 2, stride=2)
-        self.conv8 = DoubleConv(f_num*2*2, f_num*2)
-        self.up9 = nn.ConvTranspose2d(f_num*2, f_num, 2, stride=2)
-        self.conv9 = DoubleConv(f_num*2, f_num)
-        self.conv10 = nn.Conv2d(f_num, out_ch, 1)
-        '''
-        self.conv1 = DoubleConv(in_ch, f_num)
-        self.pool1 = nn.MaxPool2d(2)
-        self.conv2 = DoubleConv(f_num, f_num*2)
-        self.pool2 = nn.MaxPool2d(2)
-        self.conv3 = DoubleConv(f_num*2, f_num*2*2)
-        self.pool3 = nn.MaxPool2d(2)
-        self.conv4 = DoubleConv(f_num*2*2, f_num*2*2)
-        # 逆卷积，也可以使用上采样(保证k=stride,stride即上采样倍数)
-        self.up7 = nn.ConvTranspose2d(f_num*2*2, f_num*2*2, 2, stride=2)
-        self.conv7 = DoubleConv(f_num*2*2*2, f_num*2*2)
-        self.up8 = nn.ConvTranspose2d(f_num*2*2, f_num*2, 2, stride=2)
-        self.conv8 = DoubleConv(f_num*2*2, f_num*2)
-        self.up9 = nn.ConvTranspose2d(f_num*2, f_num, 2, stride=2)
-        self.conv9 = DoubleConv(f_num*2, f_num)
+        self.conv4 = DoubleConv(f_num * 2 * 2, f_num * 2 * 2)
+        self.up7 = nn.ConvTranspose2d(f_num * 2 * 2, f_num * 2 * 2, 2, stride=2)
+        self.conv7 = DoubleConv(f_num * 2 * 2 * 2, f_num * 2 * 2)
+        self.up8 = nn.ConvTranspose2d(f_num * 2 * 2, f_num * 2, 2, stride=2)
+        self.conv8 = DoubleConv(f_num * 2 * 2, f_num * 2)
+        self.up9 = nn.ConvTranspose2d(f_num * 2, f_num, 2, stride=2)
+        self.conv9 = DoubleConv(f_num * 2, f_num)
         self.conv10 = nn.Conv2d(f_num, out_ch, 1)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the 3-level U-Net.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape
+                ``(batch, in_ch, height, width)``.
+
+        Returns:
+            torch.Tensor: Sigmoid-activated logits of shape
+            ``(batch, out_ch, height, width)``.
+        """
         c1 = self.conv1(x)
         p1 = self.pool1(c1)
         c2 = self.conv2(p1)
@@ -175,6 +241,4 @@ class Unet3(nn.Module):
         c9 = self.conv9(merge9)
         c10 = self.conv10(c9)
         out = nn.Sigmoid()(c10)
-        # out = c10
         return out
-        # return c10

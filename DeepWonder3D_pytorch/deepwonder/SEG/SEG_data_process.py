@@ -13,81 +13,150 @@ import torch
 
 
 class testset(Dataset):
-    def __init__(self,name_list,coordinate_list,noise_img):
+    """
+    Test dataset for 3D segmentation inputs.
+
+    Each item returns a cropped patch from the full volume along with its
+    coordinate metadata.
+
+    Args:
+        name_list (list[str]): List of patch identifiers.
+        coordinate_list (dict): Mapping from patch name to coordinate dict
+            containing ``init_*`` and ``end_*`` indices.
+        noise_img (np.ndarray): Full input volume of shape
+            ``(depth, height, width)``.
+    """
+
+    def __init__(self, name_list, coordinate_list, noise_img):
         self.name_list = name_list
-        self.coordinate_list=coordinate_list
+        self.coordinate_list = coordinate_list
         self.noise_img = noise_img
 
     def __getitem__(self, index):
-        #fn = self.images[index]
         single_coordinate = self.coordinate_list[self.name_list[index]]
-        init_h = single_coordinate['init_h']
-        end_h = single_coordinate['end_h']
-        init_w = single_coordinate['init_w']
-        end_w = single_coordinate['end_w']
-        init_s = single_coordinate['init_s']
-        end_s = single_coordinate['end_s']
+        init_h = single_coordinate["init_h"]
+        end_h = single_coordinate["end_h"]
+        init_w = single_coordinate["init_w"]
+        end_w = single_coordinate["end_w"]
+        init_s = single_coordinate["init_s"]
+        end_s = single_coordinate["end_s"]
         noise_patch = self.noise_img[init_s:end_s, init_h:end_h, init_w:end_w]
 
-        noise_patch = noise_patch-np.min(noise_patch)
-        noise_patch = noise_patch/np.max(noise_patch)*100
+        noise_patch = noise_patch - np.min(noise_patch)
+        noise_patch = noise_patch / np.max(noise_patch) * 100
 
-        noise_patch=torch.from_numpy(np.expand_dims(noise_patch, 0))
-        #target = self.target[index]
-        return noise_patch,single_coordinate
+        noise_patch = torch.from_numpy(np.expand_dims(noise_patch, 0))
+        return noise_patch, single_coordinate
 
     def __len__(self):
         return len(self.name_list)
 
 
 
-def singlebatch_test_save(single_coordinate,output_image):
-    stack_start_w = int(single_coordinate['stack_start_w'])
-    stack_end_w = int(single_coordinate['stack_end_w'])
-    patch_start_w = int(single_coordinate['patch_start_w'])
-    patch_end_w = int(single_coordinate['patch_end_w'])
+def singlebatch_test_save(single_coordinate, output_image):
+    """
+    Extract a 2D prediction patch and placement indices from metadata.
 
-    stack_start_h = int(single_coordinate['stack_start_h'])
-    stack_end_h = int(single_coordinate['stack_end_h'])
-    patch_start_h = int(single_coordinate['patch_start_h'])
-    patch_end_h = int(single_coordinate['patch_end_h'])
+    Args:
+        single_coordinate (dict): Coordinate dict containing
+            ``stack_start_*``, ``stack_end_*``, ``patch_start_*``,
+            ``patch_end_*`` entries for height and width, plus
+            ``stack_start_s`` for the slice index.
+        output_image (np.ndarray): 2D or 3D output array from the network
+            (single slice case).
 
-    stack_start_s = int(single_coordinate['stack_start_s'])
+    Returns:
+        tuple:
+            - patch (np.ndarray): Cropped prediction patch.
+            - stack_start_w (int), stack_end_w (int)
+            - stack_start_h (int), stack_end_h (int)
+            - stack_start_s (int): Depth index where this patch belongs.
+    """
+    stack_start_w = int(single_coordinate["stack_start_w"])
+    stack_end_w = int(single_coordinate["stack_end_w"])
+    patch_start_w = int(single_coordinate["patch_start_w"])
+    patch_end_w = int(single_coordinate["patch_end_w"])
 
-    aaaa = output_image[patch_start_h:patch_end_h, patch_start_w:patch_end_w]
-    return aaaa,stack_start_w,stack_end_w,stack_start_h,stack_end_h,stack_start_s
+    stack_start_h = int(single_coordinate["stack_start_h"])
+    stack_end_h = int(single_coordinate["stack_end_h"])
+    patch_start_h = int(single_coordinate["patch_start_h"])
+    patch_end_h = int(single_coordinate["patch_end_h"])
+
+    stack_start_s = int(single_coordinate["stack_start_s"])
+
+    patch = output_image[patch_start_h:patch_end_h, patch_start_w:patch_end_w]
+    return patch, stack_start_w, stack_end_w, stack_start_h, stack_end_h, stack_start_s
 
 
-def multibatch_test_save(single_coordinate,id,output_image):
-    stack_start_w_id = single_coordinate['stack_start_w'].numpy()
+def multibatch_test_save(single_coordinate, id, output_image):
+    """
+    Extract a 2D prediction patch for one element in a batch.
+
+    Args:
+        single_coordinate (dict[str, torch.Tensor]): Coordinate tensors for
+            a batch, same keys as in ``singlebatch_test_save`` but values
+            are vectors.
+        id (int): Batch index.
+        output_image (np.ndarray): Batched prediction array of shape
+            ``(B, H, W)`` or similar.
+
+    Returns:
+        tuple:
+            - patch (np.ndarray): Cropped prediction patch for sample ``id``.
+            - stack_start_w (int), stack_end_w (int)
+            - stack_start_h (int), stack_end_h (int)
+            - stack_start_s (int): Depth index where this patch belongs.
+    """
+    stack_start_w_id = single_coordinate["stack_start_w"].numpy()
     stack_start_w = int(stack_start_w_id[id])
-    stack_end_w_id = single_coordinate['stack_end_w'].numpy()
-    stack_end_w=int(stack_end_w_id[id])
-    patch_start_w_id = single_coordinate['patch_start_w'].numpy()
-    patch_start_w=int(patch_start_w_id[id])
-    patch_end_w_id = single_coordinate['patch_end_w'].numpy()
-    patch_end_w=int(patch_end_w_id[id])
+    stack_end_w_id = single_coordinate["stack_end_w"].numpy()
+    stack_end_w = int(stack_end_w_id[id])
+    patch_start_w_id = single_coordinate["patch_start_w"].numpy()
+    patch_start_w = int(patch_start_w_id[id])
+    patch_end_w_id = single_coordinate["patch_end_w"].numpy()
+    patch_end_w = int(patch_end_w_id[id])
 
-    stack_start_h_id = single_coordinate['stack_start_h'].numpy()
+    stack_start_h_id = single_coordinate["stack_start_h"].numpy()
     stack_start_h = int(stack_start_h_id[id])
-    stack_end_h_id = single_coordinate['stack_end_h'].numpy()
+    stack_end_h_id = single_coordinate["stack_end_h"].numpy()
     stack_end_h = int(stack_end_h_id[id])
-    patch_start_h_id = single_coordinate['patch_start_h'].numpy()
+    patch_start_h_id = single_coordinate["patch_start_h"].numpy()
     patch_start_h = int(patch_start_h_id[id])
-    patch_end_h_id = single_coordinate['patch_end_h'].numpy()
+    patch_end_h_id = single_coordinate["patch_end_h"].numpy()
     patch_end_h = int(patch_end_h_id[id])
 
-    stack_start_s_id = single_coordinate['stack_start_s'].numpy()
+    stack_start_s_id = single_coordinate["stack_start_s"].numpy()
     stack_start_s = int(stack_start_s_id[id])
 
-    output_image_id=output_image[id]
-    aaaa = output_image_id[patch_start_h:patch_end_h, patch_start_w:patch_end_w]
+    output_image_id = output_image[id]
+    patch = output_image_id[patch_start_h:patch_end_h, patch_start_w:patch_end_w]
 
-    return aaaa,stack_start_w,stack_end_w,stack_start_h,stack_end_h,stack_start_s
+    return patch, stack_start_w, stack_end_w, stack_start_h, stack_end_h, stack_start_s
 
 
 
 def test_preprocess_lessMemoryNoTail_SubImgSEG(args, sub_img):
+    """
+    Pre-process a 3D volume into normalized 3D patches for segmentation.
+
+    This function normalizes intensities, thresholds background, and computes
+    overlapping patch coordinates with placement metadata.
+
+    Args:
+        args (dict): Configuration dictionary containing:
+            - ``'img_h'``, ``'img_w'``, ``'img_s'``: patch size.
+            - ``'gap_h'``, ``'gap_w'``, ``'gap_s'``: strides between patches.
+            - ``'normalize_factor'`` (float): Intensity normalization factor.
+        sub_img (np.ndarray): Input volume of shape
+            ``(depth, height, width)``.
+
+    Returns:
+        tuple:
+            - name_list (list[str]): List of generated patch identifiers.
+            - noise_im (np.ndarray): Normalized input volume.
+            - coordinate_list (dict): Mapping from patch name to coordinate
+              dictionary containing both crop and placement indices.
+    """
     img_h = args['img_h']
     img_w = args['img_w']
     img_s2 = args['img_s']
@@ -99,16 +168,16 @@ def test_preprocess_lessMemoryNoTail_SubImgSEG(args, sub_img):
     cut_s = (img_s2 - gap_s2)/2
 
     noise_im = sub_img
-    noise_im = (noise_im).astype(np.float32)/args['normalize_factor']
+    noise_im = noise_im.astype(np.float32)/args['normalize_factor']
 
     # intensity_thres
     bg_intensity_thres = 0.01
     noise_im_max = np.max(noise_im)
     thres = noise_im_max*bg_intensity_thres
-    noise_im[noise_im<thres] = thres
+    noise_im[noise_im < thres] = thres
 
-    noise_im = noise_im-np.min(noise_im)
-    noise_im = noise_im/np.mean(noise_im)
+    noise_im = noise_im - np.min(noise_im)
+    noise_im = noise_im / np.mean(noise_im)
     '''
     noise_im_ave_single = np.mean(noise_im, axis=0)
     noise_im_ave = np.zeros(noise_im.shape)
@@ -128,96 +197,114 @@ def test_preprocess_lessMemoryNoTail_SubImgSEG(args, sub_img):
     # print('int((whole_s-img_s2+gap_s2)/gap_s2) -----> ',int((whole_s-img_s2+gap_s2)/gap_s2))
     name_list = []
     coordinate_list = {}
-    for x in range(0,num_h):
-        for y in range(0,num_w):
-            for z in range(0,num_s):
-                single_coordinate={'init_h':0, 'end_h':0, 'init_w':0, 'end_w':0, 'init_s':0, 'end_s':0}
-                if x != (num_h-1):
-                    init_h = gap_h*x
-                    end_h = gap_h*x + img_h
-                elif x == (num_h-1):
+    for x in range(0, num_h):
+        for y in range(0, num_w):
+            for z in range(0, num_s):
+                single_coordinate = {
+                    "init_h": 0,
+                    "end_h": 0,
+                    "init_w": 0,
+                    "end_w": 0,
+                    "init_s": 0,
+                    "end_s": 0,
+                }
+                if x != (num_h - 1):
+                    init_h = gap_h * x
+                    end_h = gap_h * x + img_h
+                else:
                     init_h = whole_h - img_h
                     end_h = whole_h
 
-                if y != (num_w-1):
-                    init_w = gap_w*y
-                    end_w = gap_w*y + img_w
-                elif y == (num_w-1):
+                if y != (num_w - 1):
+                    init_w = gap_w * y
+                    end_w = gap_w * y + img_w
+                else:
                     init_w = whole_w - img_w
                     end_w = whole_w
 
-                if z != (num_s-1):
-                    init_s = gap_s2*z
-                    end_s = gap_s2*z + img_s2
-                elif z == (num_s-1):
+                if z != (num_s - 1):
+                    init_s = gap_s2 * z
+                    end_s = gap_s2 * z + img_s2
+                else:
                     init_s = whole_s - img_s2
                     end_s = whole_s
-                single_coordinate['init_h'] = init_h
-                single_coordinate['end_h'] = end_h
-                single_coordinate['init_w'] = init_w
-                single_coordinate['end_w'] = end_w
-                single_coordinate['init_s'] = init_s
-                single_coordinate['end_s'] = end_s
+                single_coordinate["init_h"] = init_h
+                single_coordinate["end_h"] = end_h
+                single_coordinate["init_w"] = init_w
+                single_coordinate["end_w"] = end_w
+                single_coordinate["init_s"] = init_s
+                single_coordinate["end_s"] = end_s
 
-                if (num_w-1)==0:
-                    single_coordinate['stack_start_w'] = 0
-                    single_coordinate['stack_end_w'] = whole_w
-                    single_coordinate['patch_start_w'] = 0
-                    single_coordinate['patch_end_w'] = img_w
-                elif (num_w-1)>0:
+                if (num_w - 1) == 0:
+                    single_coordinate["stack_start_w"] = 0
+                    single_coordinate["stack_end_w"] = whole_w
+                    single_coordinate["patch_start_w"] = 0
+                    single_coordinate["patch_end_w"] = img_w
+                elif (num_w - 1) > 0:
                     if y == 0:
-                        single_coordinate['stack_start_w'] = y*gap_w
-                        single_coordinate['stack_end_w'] = y*gap_w+img_w-cut_w
-                        single_coordinate['patch_start_w'] = 0
-                        single_coordinate['patch_end_w'] = img_w-cut_w
-                    elif y == num_w-1:
-                        single_coordinate['stack_start_w'] = whole_w-img_w+cut_w
-                        single_coordinate['stack_end_w'] = whole_w
-                        single_coordinate['patch_start_w'] = cut_w
-                        single_coordinate['patch_end_w'] = img_w
+                        single_coordinate["stack_start_w"] = y * gap_w
+                        single_coordinate["stack_end_w"] = y * gap_w + img_w - cut_w
+                        single_coordinate["patch_start_w"] = 0
+                        single_coordinate["patch_end_w"] = img_w - cut_w
+                    elif y == num_w - 1:
+                        single_coordinate["stack_start_w"] = whole_w - img_w + cut_w
+                        single_coordinate["stack_end_w"] = whole_w
+                        single_coordinate["patch_start_w"] = cut_w
+                        single_coordinate["patch_end_w"] = img_w
                     else:
-                        single_coordinate['stack_start_w'] = y*gap_w+cut_w
-                        single_coordinate['stack_end_w'] = y*gap_w+img_w-cut_w
-                        single_coordinate['patch_start_w'] = cut_w
-                        single_coordinate['patch_end_w'] = img_w-cut_w
+                        single_coordinate["stack_start_w"] = y * gap_w + cut_w
+                        single_coordinate["stack_end_w"] = y * gap_w + img_w - cut_w
+                        single_coordinate["patch_start_w"] = cut_w
+                        single_coordinate["patch_end_w"] = img_w - cut_w
 
-                if (num_h-1)==0:
-                    single_coordinate['stack_start_h'] = 0
-                    single_coordinate['stack_end_h'] = whole_h
-                    single_coordinate['patch_start_h'] = 0
-                    single_coordinate['patch_end_h'] = img_h
-                elif (num_h-1)>0:
+                if (num_h - 1) == 0:
+                    single_coordinate["stack_start_h"] = 0
+                    single_coordinate["stack_end_h"] = whole_h
+                    single_coordinate["patch_start_h"] = 0
+                    single_coordinate["patch_end_h"] = img_h
+                elif (num_h - 1) > 0:
                     if x == 0:
-                        single_coordinate['stack_start_h'] = x*gap_h
-                        single_coordinate['stack_end_h'] = x*gap_h+img_h-cut_h
-                        single_coordinate['patch_start_h'] = 0
-                        single_coordinate['patch_end_h'] = img_h-cut_h
-                    elif x == num_h-1:
-                        single_coordinate['stack_start_h'] = whole_h-img_h+cut_h
-                        single_coordinate['stack_end_h'] = whole_h
-                        single_coordinate['patch_start_h'] = cut_h
-                        single_coordinate['patch_end_h'] = img_h
+                        single_coordinate["stack_start_h"] = x * gap_h
+                        single_coordinate["stack_end_h"] = x * gap_h + img_h - cut_h
+                        single_coordinate["patch_start_h"] = 0
+                        single_coordinate["patch_end_h"] = img_h - cut_h
+                    elif x == num_h - 1:
+                        single_coordinate["stack_start_h"] = whole_h - img_h + cut_h
+                        single_coordinate["stack_end_h"] = whole_h
+                        single_coordinate["patch_start_h"] = cut_h
+                        single_coordinate["patch_end_h"] = img_h
                     else:
-                        single_coordinate['stack_start_h'] = x*gap_h+cut_h
-                        single_coordinate['stack_end_h'] = x*gap_h+img_h-cut_h
-                        single_coordinate['patch_start_h'] = cut_h
-                        single_coordinate['patch_end_h'] = img_h-cut_h
+                        single_coordinate["stack_start_h"] = x * gap_h + cut_h
+                        single_coordinate["stack_end_h"] = x * gap_h + img_h - cut_h
+                        single_coordinate["patch_start_h"] = cut_h
+                        single_coordinate["patch_end_h"] = img_h - cut_h
 
-                single_coordinate['stack_start_s'] = z
+                single_coordinate["stack_start_s"] = z
 
-
-                # noise_patch1 = noise_im[init_s:end_s,init_h:end_h,init_w:end_w]
-                patch_name = 'x'+str(x)+'_y'+str(y)+'_z'+str(z)
-                # train_raw.append(noise_patch1.transpose(1,2,0))
+                patch_name = "x" + str(x) + "_y" + str(y) + "_z" + str(z)
                 name_list.append(patch_name)
-                # print(' single_coordinate -----> ',single_coordinate)
                 coordinate_list[patch_name] = single_coordinate
 
-    return  name_list, noise_im, coordinate_list
+    return name_list, noise_im, coordinate_list
 
 
 
 def get_gap_s(args, img, stack_num):
+    """
+    Compute a slice gap for generating a desired number of 3D patches.
+
+    Args:
+        args: Configuration object with attributes:
+            - ``img_w``, ``img_h``, ``img_s``: patch size.
+            - ``gap_w``, ``gap_h``: in-plane patch strides.
+            - ``train_datasets_size``: target number of patches.
+        img (np.ndarray): Input volume of shape
+            ``(depth, height, width)``.
+        stack_num (int): Number of stacks used during training.
+
+    Returns:
+        int: Computed gap along the slice dimension.
+    """
     whole_w = img.shape[2]
     whole_h = img.shape[1]
     whole_s = img.shape[0]

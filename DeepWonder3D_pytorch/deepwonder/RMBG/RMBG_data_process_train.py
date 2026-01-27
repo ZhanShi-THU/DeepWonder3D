@@ -6,14 +6,22 @@ import math
 import torch
 from torch.utils.data import Dataset
 
-###
-#  this file is for pre-processing images for training and test.
-#  currently we use splitted dataset
-
-
-###############################
-# dataset class
 def random_transform(noise_patch):
+    """
+    Apply random spatial flips, rotations, and intensity changes to a patch.
+
+    The transformation is used as a simple data augmentation step for RMBG
+    training. Flips are applied along random axes, rotations are multiples
+    of 90 degrees in the XY plane, and a random background offset/gamma
+    scaling is applied to intensity.
+
+    Args:
+        noise_patch (np.ndarray): Input volume with shape
+            ``(depth, height, width)``.
+
+    Returns:
+        np.ndarray: Augmented patch with the same shape as the input.
+    """
     flip_num = random.randint(0,4)
     if flip_num==1:
         noise_patch = np.flip(noise_patch, 0).copy()
@@ -45,6 +53,22 @@ def random_transform(noise_patch):
 
 from torch.nn import functional as F
 def random_imresize(noise_patch, sample_down=1, SR_sample_up=10):
+    """
+    Randomly downsample and upsample a tensor to simulate resolution changes.
+
+    The input is downsampled by a random integer factor and then resized back
+    to the original spatial size using bilinear interpolation, which
+    introduces blur and aliasing typical of lower-resolution acquisitions.
+
+    Args:
+        noise_patch (torch.Tensor): Tensor of shape
+            ``(B, C, H, W)`` or ``(C, H, W)`` to be resampled.
+        sample_down (int): Minimum downsampling factor.
+        SR_sample_up (int): Maximum downsampling factor (inclusive).
+
+    Returns:
+        torch.Tensor: Tensor resampled back to the original spatial size.
+    """
     img_size = noise_patch.shape[-1]
     up_rate = random.randint(sample_down, SR_sample_up)
     sub_img_size = img_size//up_rate
@@ -69,6 +93,25 @@ def random_imresize(noise_patch, sample_down=1, SR_sample_up=10):
 
 
 class trainset_RMBG(Dataset):
+    """
+    RMBG 3D training dataset using full 3D target volumes.
+
+    Args:
+        name_list (list[str]): List of patch identifiers.
+        coor_list (dict): Mapping from patch name to coordinate dictionary that
+            includes the image ``'name'`` and the patch bounding box.
+        GT_list (dict[str, np.ndarray]): Mapping from image name to ground-truth
+            volume ``(depth, height, width)``.
+        raw_list (dict[str, np.ndarray]): Mapping from image name to input
+            volume with the same shape as the ground truth.
+
+    __getitem__ output:
+        - input (torch.Tensor): Augmented input patch (CUDA float),
+          shape ``(1, D, H, W)``.
+        - target (torch.Tensor): Ground-truth patch (CUDA float),
+          shape ``(1, D, H, W)``.
+        - patch_name (str): Identifier of the selected patch.
+    """
     def __init__(self, name_list, coor_list, GT_list, raw_list):
         self.name_list = name_list
         self.coor_list=coor_list
@@ -76,7 +119,6 @@ class trainset_RMBG(Dataset):
         self.raw_list = raw_list
 
     def __getitem__(self, index):
-        #fn = self.images[index]
         patch_name = self.name_list[index]
         single_coordinate = self.coor_list[patch_name]
         init_h = single_coordinate['init_h']
@@ -95,15 +137,12 @@ class trainset_RMBG(Dataset):
         if_random_transform = 1
         if if_random_transform:
             input = random_transform(input)
-            # print('input -----> ',input.shape)
 
         input=torch.from_numpy(np.expand_dims(input, 0)).cuda().float()
         target=torch.from_numpy(np.expand_dims(target, 0)).cuda().float()
 
         if if_random_imresize:
             input = random_imresize(input)
-            # print('input -----> ',input.shape)
-        #target = self.target[index]
         return input, target, patch_name
 
     def __len__(self):
@@ -111,6 +150,19 @@ class trainset_RMBG(Dataset):
 
 
 class testset_RMBG(Dataset):
+    """
+    RMBG 3D test dataset yielding input patches and coordinates.
+
+    Args:
+        img (np.ndarray): Full 3D volume, shape ``(depth, height, width)``.
+        per_patch_list (list[str]): List of patch identifiers.
+        per_coor_list (dict): Mapping from patch name to coordinate dict.
+
+    __getitem__ output:
+        - img_patch (torch.Tensor): Patch tensor of shape ``(1, D, H, W)``.
+        - per_coor (dict): Coordinate dictionary for the patch.
+        - patch_name (str): Identifier string.
+    """
     def __init__(self, img, per_patch_list, per_coor_list):
         self.per_patch_list = per_patch_list
         self.per_coor_list = per_coor_list
@@ -118,8 +170,6 @@ class testset_RMBG(Dataset):
 
     def __getitem__(self, index):
         patch_name = self.per_patch_list[index]
-        # print('patch_name -----> ',patch_name)
-        # print('per_coor_list -----> ',self.per_coor_list)
         per_coor = self.per_coor_list[patch_name]
         init_h = per_coor['init_h']
         end_h = per_coor['end_h']
@@ -129,7 +179,6 @@ class testset_RMBG(Dataset):
         end_s = per_coor['end_s']
         img_patch = self.img[init_s:end_s, init_h:end_h, init_w:end_w]
         img_patch=torch.from_numpy(np.expand_dims(img_patch, 0))
-        #target = self.target[index]
         return img_patch, per_coor, patch_name
 
     def __len__(self):
@@ -140,6 +189,20 @@ class testset_RMBG(Dataset):
 ###############################
 ###############################
 class testset_RMBG2D(Dataset):
+    """
+    RMBG 2D test dataset yielding 2D patches (no channel dimension).
+
+    Args:
+        img (np.ndarray): Full 3D volume, shape ``(depth, height, width)``.
+        per_patch_list (list[str]): List of patch identifiers.
+        per_coor_list (dict): Mapping from patch name to coordinate dict.
+
+    __getitem__ output:
+        - img_patch (torch.Tensor): 3D tensor containing the selected 3D patch
+          without adding a channel axis.
+        - per_coor (dict): Coordinate dictionary for the patch.
+        - patch_name (str): Identifier string.
+    """
     def __init__(self, img, per_patch_list, per_coor_list):
         self.per_patch_list = per_patch_list
         self.per_coor_list = per_coor_list
@@ -147,8 +210,6 @@ class testset_RMBG2D(Dataset):
 
     def __getitem__(self, index):
         patch_name = self.per_patch_list[index]
-        # print('patch_name -----> ',patch_name)
-        # print('per_coor_list -----> ',self.per_coor_list)
         per_coor = self.per_coor_list[patch_name]
         init_h = per_coor['init_h']
         end_h = per_coor['end_h']
@@ -157,9 +218,7 @@ class testset_RMBG2D(Dataset):
         init_s = per_coor['init_s']
         end_s = per_coor['end_s']
         img_patch = self.img[init_s:end_s, init_h:end_h, init_w:end_w]
-        # img_patch=torch.from_numpy(np.expand_dims(img_patch, 0))
         img_patch=torch.from_numpy(img_patch)
-        #target = self.target[index]
         return img_patch, per_coor, patch_name
 
     def __len__(self):
@@ -170,6 +229,20 @@ class testset_RMBG2D(Dataset):
 ###############################
 # pre-process
 def get_gap_s(args, img, stack_num):
+    """
+    Compute a slice gap for generating a desired number of training patches.
+
+    Args:
+        args: Configuration object with attributes:
+            - ``img_w``, ``img_h``, ``img_s``: patch dimensions.
+            - ``gap_w``, ``gap_h``: in-plane strides.
+            - ``train_datasets_size``: target number of training samples.
+        img (np.ndarray): Input volume, shape ``(depth, height, width)``.
+        stack_num (int): Number of stacks used during training.
+
+    Returns:
+        int: Gap along the slice dimension.
+    """
     whole_w = img.shape[2]
     whole_h = img.shape[1]
     whole_s = img.shape[0]
@@ -190,6 +263,23 @@ def get_gap_s(args, img, stack_num):
 ###############################
 ###############################
 def test_preprocess_lessMemory_RMBG(args):
+    """
+    Pre-process RMBG test data into overlapping 3D patches.
+
+    This function loads all TIFF stacks, normalizes intensity, and computes
+    patch coordinates and placement information for later reconstruction.
+
+    Args:
+        args: Configuration object with RMBG-specific fields such as
+            patch size, gaps, paths, and normalization factor.
+
+    Returns:
+        tuple:
+            - name_list (list[str]): Names of all input stacks.
+            - patch_name_list (dict): Per-stack list of patch names.
+            - img_list (dict): Per-stack normalized image arrays.
+            - coordinate_list (dict): Per-stack patch coordinate dictionaries.
+    """
     img_h = args.RMBG_img_h
     img_w = args.RMBG_img_w
     img_s2 = args.RMBG_img_s
@@ -340,20 +430,48 @@ def test_preprocess_lessMemory_RMBG(args):
 
 
 def generate_gaussian_kernel(kernel_size):
-    sigma = 1.0  # 高斯核的标准差
+    """
+    Generate a 2D Gaussian kernel normalized to sum to 1.
+
+    Args:
+        kernel_size (int): Size of the square kernel (odd integer recommended).
+
+    Returns:
+        np.ndarray: 2D Gaussian kernel of shape ``(kernel_size, kernel_size)``.
+    """
+    sigma = 1.0
     kernel = np.zeros((kernel_size, kernel_size))
     center = kernel_size // 2
-    # 生成二维高斯卷积核
     for i in range(kernel_size):
         for j in range(kernel_size):
             kernel[i, j] = np.exp(-((i - center)**2 + (j - center)**2) / (2 * sigma**2))
-    # 对卷积核进行归一化
     kernel /= np.sum(kernel)
     return kernel
 
 
 
 def train_preprocess_lessMemory_RMBG(args):
+    """
+    Pre-process RMBG 3D training data into randomized volume patches.
+
+    This function loads paired input/GT volumes, performs optional
+    pre-processing (including Gaussian background removal), intensity
+    normalization, and samples random 3D patches used for training.
+
+    Args:
+        args: Configuration object with fields such as:
+            - ``RMBG_input_pretype``, ``RMBG_GT_pretype``
+            - dataset paths and folders
+            - patch sizes and normalization factors
+            - target number of training samples
+
+    Returns:
+        tuple:
+            - patch_name_list (list[str]): Names of generated patches.
+            - coor_list (dict): Mapping from patch name to coordinate dict.
+            - GT_list (dict[str, np.ndarray]): Ground-truth volumes per image.
+            - input_list (dict[str, np.ndarray]): Input volumes per image.
+    """
     input_pretype = args.RMBG_input_pretype
     GT_pretype = args.RMBG_GT_pretype
 
@@ -477,6 +595,22 @@ def train_preprocess_lessMemory_RMBG(args):
 ##############################################################################
 ##############################################################################
 def train_preprocess_lessMemory_RMBG2D(args):
+    """
+    Pre-process RMBG 2D training data into randomized 2D patches.
+
+    Similar to ``train_preprocess_lessMemory_RMBG`` but samples 2D targets
+    from 3D volumes, taking a center slice in the depth dimension.
+
+    Args:
+        args: Configuration object with RMBG 2D-specific settings.
+
+    Returns:
+        tuple:
+            - patch_name_list (list[str]): Names of generated patches.
+            - coor_list (dict): Mapping from patch name to coordinate dict.
+            - GT_list (dict[str, np.ndarray]): Ground-truth volumes per image.
+            - input_list (dict[str, np.ndarray]): Input volumes per image.
+    """
     input_pretype = args.RMBG_input_pretype
     GT_pretype = args.RMBG_GT_pretype
 
@@ -573,6 +707,24 @@ def train_preprocess_lessMemory_RMBG2D(args):
 
 
 class trainset_RMBG2D(Dataset):
+    """
+    RMBG 2D training dataset.
+
+    Each item corresponds to a 3D input patch and a 2D target slice selected
+    from the center of the 3D ground-truth volume.
+
+    Args:
+        name_list (list[str]): Patch identifiers.
+        coor_list (dict): Mapping from patch name to coordinate dict.
+        GT_list (dict[str, np.ndarray]): Ground-truth volumes.
+        raw_list (dict[str, np.ndarray]): Input volumes.
+
+    __getitem__ output:
+        - input (torch.Tensor): 3D input patch (CUDA float).
+        - target (torch.Tensor): 2D target slice as a 3D tensor with a
+          singleton channel dimension.
+        - patch_name (str): Identifier string.
+    """
     def __init__(self, name_list, coor_list, GT_list, raw_list):
         self.name_list = name_list
         self.coor_list=coor_list
@@ -580,7 +732,6 @@ class trainset_RMBG2D(Dataset):
         self.raw_list = raw_list
 
     def __getitem__(self, index):
-        #fn = self.images[index]
         patch_name = self.name_list[index]
         single_coordinate = self.coor_list[patch_name]
         init_h = single_coordinate['init_h']
@@ -593,7 +744,6 @@ class trainset_RMBG2D(Dataset):
         raw = self.raw_list[name]
         GT = self.GT_list[name]
         input = raw[init_s: end_s, init_h:end_h, init_w:end_w]
-        # target = GT[init_s: end_s, init_h:end_h, init_w:end_w]
         target = GT[init_s+(end_s-init_s)//2, init_h:end_h, init_w:end_w]
         if target.shape==2:
             target = target[np.newaxis,:,:]
@@ -602,18 +752,12 @@ class trainset_RMBG2D(Dataset):
         if_random_transform = 0
         if if_random_transform:
             input = random_transform(input)
-            # print('input -----> ',input.shape)
 
         input=torch.from_numpy(input).cuda().float()
         target=torch.from_numpy(np.expand_dims(target, 0)).cuda().float()
-        # print('input -----> ',input.shape)
 
         if if_random_imresize:
             input = random_imresize(input)
-            # print('input -----> ',input.shape)
-        #target = self.target[index]
-        # print('input -----> ',input.shape)
-        # print('target -----> ',target.shape)
         return input, target, patch_name
 
     def __len__(self):
