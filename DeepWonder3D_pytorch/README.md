@@ -68,7 +68,7 @@ The pipeline's behavior is governed by several key parameters defined in the `__
 | `GPU_index`         | Specifies which GPU device to use.                           | e.g., `'0'` or `'0,1'`.                                      |
 | `type`              | Selector string for active pipeline modules.                 | e.g., `'deno_sr_rmbg_seg_mn_vm'`.                            |
 
-While the key parameters above require manual definition in main_pipeline_2d.py or main_pipeline_3d.py, other auxiliary and fine-grained configurations are predefined in para_dict.py. Advanced users may modify that file to adjust internal model hyperparameters; however, please note that suboptimal or excessively aggressive hyperparameter tuning may adversely impact DW3D's performance. Should you choose to explore these advanced configurations, please refer to the comprehensive comments within the source code for more guidance.
+While the key parameters above require manual definition in `main_pipeline_2d.py` or `main_pipeline_3d.py`, other auxiliary and fine-grained configurations are predefined in `para_dict.py`. Advanced users may modify that file to adjust internal model hyperparameters; however, please note that suboptimal or excessively aggressive hyperparameter tuning may adversely impact DW3D's performance. Should you choose to explore these advanced configurations, please refer to the comprehensive comments within the source code for more guidance.
 
 
 
@@ -99,7 +99,7 @@ DeepWonder3D utilizes a modular sequence of processing steps to ensure robustnes
 ### 1. 2D vs. 3D Processing
 
 - **`main_pipeline_2d.py`**: Optimized for single-plane or maximum intensity projection (MIP) data where axial depth is not required.
-- **`main_pipeline_3d.py`**: Integrates **View Merging (VM)** to achieve multi-view fusion.
+- **`main_pipeline_3d.py`**: Integrates **View Merging (VM)** to achieve multi-view fusion and 3D localization of neurons.
 
 ### 2. Hierarchical Result Structure
 
