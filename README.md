@@ -19,7 +19,7 @@ We provide two versions of **DeepWonder3D**:
 1. **Python source code version** (primarily implemented in [PyTorch](https://pytorch.org/)), available directly in this repository. Installation instructions are provided in the following sections.
 2. **GUI version**, which can be downloaded [here](https://cloud.tsinghua.edu.cn/f/8a1dfafe84ec4f5a819f/?dl=1). This version can be used immediately without environment setup.
 
-To facilitate a quick hands-on experience with **DeepWonder3D**, we include a `datasets` folder in `DeepWonder3D_pytorch` as a demo for users to try out.
+Once the installation is complete, comprehensive usage documentation can be found [here](./DeepWonder3D_pytorch/README.md). To facilitate a quick hands-on experience with **DeepWonder3D**, we include a `datasets` folder in `DeepWonder3D_pytorch` as a demo for users to try out.
 
 ## Our Environment
 
@@ -36,7 +36,7 @@ To facilitate a quick hands-on experience with **DeepWonder3D**, we include a `d
 
 2. Create a virtual environment and install PyTorch 2.0.1.
 
-   ```python
+   ```bash
    conda create -n dw3d python=3.8
    conda activate dw3d
    conda install pytorch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 pytorch-cuda=11.8 -c pytorch -c nvidia
@@ -101,3 +101,15 @@ To facilitate a quick hands-on experience with **DeepWonder3D**, we include a `d
      > You need to **RE-START** CMD for the new setting to take effect!
      >
      > (cited from [here](https://www3.ntu.edu.sg/home/ehchua/programming/howto/Environment_Variables.html))
+
+## Usage
+
+Following a successful installation, comprehensive usage documentation can be found [here](./DeepWonder3D_pytorch/README.md). 
+
+While the full documentation is extensive, users only need three commands to get up and running.
+
+```bash
+conda activate dw3d
+cd DeepWonder3D_pytorch
+python main_pipeline_3d.py
+```
