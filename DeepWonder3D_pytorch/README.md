@@ -1,6 +1,6 @@
 Welcome to **DeepWonder3D**, a comprehensive computational framework designed for the rapid and robust extraction of neuronal information from 3D calcium imaging datasets. This pipeline orchestrates the transition from raw, noisy volumetric data to precise 3D spatial localization and high-fidelity temporal traces, facilitating the analysis of large-scale neuronal dynamics.
 
-------
+
 
 ## I. System Preparation and Requirements
 
@@ -54,7 +54,7 @@ The matrix stored in `psffit_matrix.mat` contains the following columns:
 >
 > Since the PSF obtained under your experimental conditions may differ from ours, **before running `main_pipeline.py` on your dataset**, please first execute `get_PSFfit_matrix.py` in this directory to generate a `psffit_matrix.mat` that is compatible with your data.
 
-------
+
 
 ## II. Parameter Configuration
 
@@ -70,7 +70,7 @@ The pipeline's behavior is governed by several key parameters defined in the `__
 
 While the key parameters above require manual definition in main_pipeline_2d.py or main_pipeline_3d.py, other auxiliary and fine-grained configurations are predefined in para_dict.py. Advanced users may modify that file to adjust internal model hyperparameters; however, please note that suboptimal or excessively aggressive hyperparameter tuning may adversely impact DW3D's performance. Should you choose to explore these advanced configurations, please refer to the comprehensive comments within the source code for more guidance.
 
-------
+
 
 ## III. Modular Pipeline Architecture
 
@@ -92,7 +92,7 @@ DeepWonder3D utilizes a modular sequence of processing steps to ensure robustnes
 | **SEG & MN**                   | Neuronal Extraction Module        |
 | **VM**                         | Multi-view Fusion Module          |
 
-----
+
 
 ## IV. Pipeline Execution and Output
 
@@ -114,7 +114,7 @@ Upon completion, the `output_dir` will contain a structured sequence of results 
 - **`STEP_7_VM`**: (**3D Only**) Final 3D localization and merged temporal traces.
 - **`times`**: Total running time of each processing step.
 
-------
+
 
 ## V. Model Training (`main_train.py`)
 
