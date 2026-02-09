@@ -64,7 +64,7 @@ The pipeline's behavior is governed by several key parameters defined in the `__
 | ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | `now_pixel_size`    | The spatial resolution of input raw data (μm).               | Derived from microscope metadata.                            |
 | `target_pixel_size` | The desired spatial resolution after DW3D enhancement (μm).  | This repository provides pre-trained model weights (`.pth`) for both 1 μm and 2 μm resolutions for user selection. |
-| `t_resolution`      | The temporal resolution (i.e., frame rate) of input raw data (Hz). | User-defined based on desired resampling.                    |
+| `t_resolution`      | The temporal resolution (i.e., frame rate) of input raw data (Hz). | Derived from microscope metadata.                            |
 | `GPU_index`         | Specifies which GPU device to use.                           | e.g., `'0'` or `'0,1'`.                                      |
 | `type`              | Selector string for active pipeline modules.                 | e.g., `'deno_sr_rmbg_seg_mn_vm'`.                            |
 
