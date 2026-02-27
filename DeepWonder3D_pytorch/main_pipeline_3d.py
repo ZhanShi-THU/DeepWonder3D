@@ -81,16 +81,15 @@ def main_pipeline(input_path,
             ``'0'`` or ``'0,1'``.
         output_dir (str): Directory where all intermediate results and final
             outputs of the pipeline will be stored.
-        t_resolution (int, optional): Target temporal resolution (in the same
-            time unit as expected by ``adjust_time_resolution``). If different
-            from the default and ``'tr'`` is present in ``type``, the temporal
-            resampling step is executed.
+        t_resolution (int, optional): Temporal resolution of input data (unit: Hz).
+            If different from the model default (10 Hz) and ``'tr'`` is present in ``type``, 
+            the temporal resampling step is executed.
         type (str, optional): Pipeline step selector string, default
             ``'deno_sr_rmbg_seg_mn'``. The presence of the following
             substrings controls which stages are executed:
             - ``'deno'``: run denoising.
             - ``'tr'``: adjust temporal resolution.
-            - ``'sr'``: run super-resolution.
+            - ``'sr'``: adjust spatial resolution.
             - ``'rmbg'``: remove background.
             - ``'seg'``: run segmentation.
             - ``'mn'``: merge neuron instances.
