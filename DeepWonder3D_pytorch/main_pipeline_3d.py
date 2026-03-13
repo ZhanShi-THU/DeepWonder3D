@@ -64,7 +64,8 @@ def main_pipeline(input_path,
                   output_dir,
                   t_resolution=10,
                   type='deno_sr_rmbg_seg_mn',
-                  neuron_coords_file=None):
+                  neuron_coords_file=None,
+                  fast_trace_mode='raw'):
     """
     Run the full 3D processing pipeline for neuronal imaging data.
 
@@ -101,6 +102,13 @@ def main_pipeline(input_path,
             - ``'mn'``: merge neuron instances.
             - ``'vm'``: perform view merging and 3D localization using
               ``psffit_matrix_file``.
+        neuron_coords_file (str, optional): If provided, enables fast trace
+            extraction based on known neuron coordinates.
+        fast_trace_mode (str, optional): Trade-off mode used when
+            ``neuron_coords_file`` is provided.
+            - ``'raw'``: fastest, run fast trace directly on raw input.
+            - ``'deno_rmbg'``: run DENO + RMBG first, then fast trace.
+            - ``'tr_sr_rmbg'``: run DENO + TR + SR + RMBG first, then fast trace.
 
     Returns:
         None: All results are written to subfolders under ``output_dir``.
@@ -118,18 +126,58 @@ def main_pipeline(input_path,
     NOW_folder = input_folder
 
     if neuron_coords_file is not None:
-        print('FAST_TRACE mode: spatial coordinates provided, skip full pipeline and extract traces directly.')
+        mode_to_preprocess = {
+            'raw': None,
+            'deno_rmbg': 'deno_rmbg',
+            'tr_sr_rmbg': 'deno_tr_sr_rmbg',
+        }
+        if fast_trace_mode not in mode_to_preprocess:
+            raise ValueError(f'Unsupported fast_trace_mode: {fast_trace_mode}. Choose from {list(mode_to_preprocess.keys())}.')
+
+        fast_input_path = input_path
+        fast_input_folder = input_folder
+        preprocess_type = mode_to_preprocess[fast_trace_mode]
+
+        if preprocess_type is not None:
+            print(f'FAST_TRACE mode: run lightweight preprocessing ({preprocess_type}) before trace extraction...')
+            main_pipeline(
+                input_path=input_path,
+                input_folder=input_folder,
+                psffit_matrix_file=psffit_matrix_file,
+                SR_up_rate=SR_up_rate,
+                GPU_index=GPU_index,
+                output_dir=output_dir,
+                t_resolution=t_resolution,
+                type=preprocess_type,
+                neuron_coords_file=None,
+            )
+            fast_input_path = output_dir
+            fast_input_folder = 'STEP_4_RMBG'
+        else:
+            print('FAST_TRACE mode: raw mode selected, skip preprocessing for maximal speed.')
+
         t_FAST = -time()
         run_fast_trace_pipeline(
-            input_path=input_path,
-            input_folder=input_folder,
+            input_path=fast_input_path,
+            input_folder=fast_input_folder,
             neuron_coords_file=neuron_coords_file,
             psffit_matrix_file=psffit_matrix_file,
             output_dir=output_dir,
+            output_folder=f'STEP_FAST_TRACE_{fast_trace_mode.upper()}',
             upsample_rate=SR_up_rate,
         )
         t_FAST += time()
-        times = {'DENO': -1, 'TR': -1, 'SR': -1, 'RMBG': -1, 'SEG': -1, 'MN': -1, 'VM': -1, 'FAST_TRACE': t_FAST}
+        times = {
+            'DENO': -1,
+            'TR': -1,
+            'SR': -1,
+            'RMBG': -1,
+            'SEG': -1,
+            'MN': -1,
+            'VM': -1,
+            'FAST_TRACE': t_FAST,
+            'FAST_TRACE_MODE': fast_trace_mode,
+        }
         save_times_json(times, output_dir)
         return
 

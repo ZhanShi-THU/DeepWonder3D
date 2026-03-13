@@ -125,9 +125,13 @@ Upon completion, the `output_dir` will contain a structured sequence of results 
 
 ### 3. Fast trace-only mode with known neuron coordinates
 
-For longitudinal imaging of the same sample, you can skip the heavy modules (`DENO/TR/SR/RMBG/SEG/MN/VM`) and directly extract traces when neuron 3D coordinates are already known (for example from a previous run's `STEP_7_VM/result.mat`).
+For longitudinal imaging of the same sample, you can reuse known neuron 3D coordinates (for example from a previous run's `STEP_7_VM/result.mat`) and choose one of three speed/quality trade-off modes:
 
-Use `main_pipeline` with `neuron_coords_file`:
+- `fast_trace_mode='raw'`: skip all preprocessing, fastest speed, baseline quality.
+- `fast_trace_mode='deno_rmbg'`: run DENO + RMBG first, then fast trace extraction.
+- `fast_trace_mode='tr_sr_rmbg'`: run DENO + TR + SR + RMBG first, then fast trace extraction (higher quality, slower than the two modes above).
+
+Use `main_pipeline` with `neuron_coords_file` and the selected `fast_trace_mode`:
 
 ```python
 from main_pipeline_3d import main_pipeline
@@ -140,12 +144,18 @@ main_pipeline(
     GPU_index='0',
     output_dir='./results/fast_trace_case',
     neuron_coords_file='./results/previous_case/STEP_6_MN/STEP_7_VM/result.mat',
+    fast_trace_mode='deno_rmbg',  # raw / deno_rmbg / tr_sr_rmbg
 )
 ```
 
-This mode writes `STEP_FAST_TRACE/result_fast_trace.mat`, including:
+Outputs are saved under mode-specific folders:
+- `STEP_FAST_TRACE_RAW/result_fast_trace.mat`
+- `STEP_FAST_TRACE_DENO_RMBG/result_fast_trace.mat`
+- `STEP_FAST_TRACE_TR_SR_RMBG/result_fast_trace.mat`
+
+Each `.mat` output contains:
 - `spatial_3D`: input coordinates
-- `all_single_neuron_trace`: fast merged traces
+- `all_single_neuron_trace`: merged traces
 - `all_view_traces`: per-view traces
 
 ## V. Model Training (`main_train.py`)

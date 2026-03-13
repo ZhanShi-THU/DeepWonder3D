@@ -3,9 +3,13 @@ scipy
 tifffile
 natsort
 scikit-image
+scikit-learn
 opencv-python-headless
 torch
 torchvision
 torchaudio
+h5py
+thop
+psutil
 PyYAML
 matplotlib
