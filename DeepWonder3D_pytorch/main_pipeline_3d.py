@@ -5,6 +5,7 @@ from deepwonder.test_MN import calculate_neuron
 from deepwonder.test_DENO_acc import test_DENO_net
 from deepwonder.test_TR import adjust_time_resolution, get_data_fingerprint
 from deepwonder.test_VM import run_view_merging_pipeline
+from deepwonder.test_FAST_TRACE import run_fast_trace_pipeline
 from deepwonder.utils import save_times_json, validate_gpu_index
 
 import os
@@ -18,7 +19,7 @@ import sys
 import gc
 
 
-def clear_large_variables(threshold=1 * 1024 * 1024):
+def clear_large_variables(threshold=1 * 1024 * 1024, enabled=False):
     """
     Delete large global variables whose size exceeds a given threshold.
 
@@ -40,6 +41,10 @@ def clear_large_variables(threshold=1 * 1024 * 1024):
         - This function is primarily intended for long-running pipelines that
           work with large intermediate arrays or tensors.
     """
+    if not enabled:
+        gc.collect()
+        return
+
     # copy globals() to avoid mutating the dictionary while iterating
     global_vars = globals().copy()
     for var_name, var_value in global_vars.items():
@@ -58,7 +63,8 @@ def main_pipeline(input_path,
                   GPU_index,
                   output_dir,
                   t_resolution=10,
-                  type='deno_sr_rmbg_seg_mn'):
+                  type='deno_sr_rmbg_seg_mn',
+                  neuron_coords_file=None):
     """
     Run the full 3D processing pipeline for neuronal imaging data.
 
@@ -111,6 +117,22 @@ def main_pipeline(input_path,
     NOW_path = input_path
     NOW_folder = input_folder
 
+    if neuron_coords_file is not None:
+        print('FAST_TRACE mode: spatial coordinates provided, skip full pipeline and extract traces directly.')
+        t_FAST = -time()
+        run_fast_trace_pipeline(
+            input_path=input_path,
+            input_folder=input_folder,
+            neuron_coords_file=neuron_coords_file,
+            psffit_matrix_file=psffit_matrix_file,
+            output_dir=output_dir,
+            upsample_rate=SR_up_rate,
+        )
+        t_FAST += time()
+        times = {'DENO': -1, 'TR': -1, 'SR': -1, 'RMBG': -1, 'SEG': -1, 'MN': -1, 'VM': -1, 'FAST_TRACE': t_FAST}
+        save_times_json(times, output_dir)
+        return
+
     t_DENO = -9999
     t_TR = -9999
     t_SR = -9999
@@ -118,7 +140,7 @@ def main_pipeline(input_path,
     t_SEG = -9999
     t_MN = -9999
     t_VM = -9999
-    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM}
+    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM, 'FAST_TRACE': -1}
     T_output_dir = output_dir
     save_times_json(times, T_output_dir)
 
@@ -158,7 +180,7 @@ def main_pipeline(input_path,
         print('DENO (denoising) is not in type')
         t_DENO = -1
 
-    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM}
+    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM, 'FAST_TRACE': -1}
     save_times_json(times, T_output_dir)
 
     ############ TR #########################################
@@ -183,7 +205,7 @@ def main_pipeline(input_path,
         print('TR (adjust time resolution) is not in type')
         t_TR = -1
 
-    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM}
+    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM, 'FAST_TRACE': -1}
     save_times_json(times, T_output_dir)
 
     ############ SR #########################################
@@ -219,7 +241,7 @@ def main_pipeline(input_path,
         print('SR (super resolution) is not in type')
         t_SR = -1
 
-    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM}
+    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM, 'FAST_TRACE': -1}
     save_times_json(times, T_output_dir)
 
     ############ RMBG #########################################
@@ -255,7 +277,7 @@ def main_pipeline(input_path,
         print('RMBG (remove background) is not in type')
         t_RMBG = -1
 
-    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM}
+    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM, 'FAST_TRACE': -1}
     save_times_json(times, T_output_dir)
     ###################### SEG #############
     ########################################
@@ -289,7 +311,7 @@ def main_pipeline(input_path,
         print('SEG (segmentation) is not in type')
         t_SEG = -1
 
-    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM}
+    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM, 'FAST_TRACE': -1}
     save_times_json(times, T_output_dir)
 
     ###################### MN ##############
@@ -322,7 +344,7 @@ def main_pipeline(input_path,
         print('MN (merge neurons) is not in type')
         t_MN = -1
 
-    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM}
+    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM, 'FAST_TRACE': -1}
     save_times_json(times, T_output_dir)
     ###################### VM ##############
     ########################################
@@ -341,7 +363,7 @@ def main_pipeline(input_path,
         print('VM (view merging) is not in type')
         t_VM = -1
 
-    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM}
+    times = {'DENO': t_DENO, 'TR': t_TR, 'SR': t_SR, 'RMBG': t_RMBG, 'SEG': t_SEG, 'MN': t_MN, 'VM': t_VM, 'FAST_TRACE': -1}
     save_times_json(times, T_output_dir)
 
 

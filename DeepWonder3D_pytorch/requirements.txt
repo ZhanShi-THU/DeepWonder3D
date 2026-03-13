@@ -1,0 +1,11 @@
+numpy
+scipy
+tifffile
+natsort
+scikit-image
+opencv-python-headless
+torch
+torchvision
+torchaudio
+PyYAML
+matplotlib
