@@ -6,6 +6,12 @@ Welcome to **DeepWonder3D**, a comprehensive computational framework designed fo
 
 Before executing the pipelines, ensure your local directory is structured as follows to allow for seamless data ingestion and model initialization:
 
+Before running scripts, install Python dependencies in your current environment:
+
+```bash
+pip install -r requirements.txt
+```
+
 ### 1. Pre-trained Weights and Calibration (`/pth`)
 
 The `/pth` directory must contain the necessary network weights and the optical calibration matrix:
@@ -115,6 +121,32 @@ Upon completion, the `output_dir` will contain a structured sequence of results 
 - **`times`**: Total running time of each processing step.
 
 
+
+
+### 3. Fast trace-only mode with known neuron coordinates
+
+For longitudinal imaging of the same sample, you can skip the heavy modules (`DENO/TR/SR/RMBG/SEG/MN/VM`) and directly extract traces when neuron 3D coordinates are already known (for example from a previous run's `STEP_7_VM/result.mat`).
+
+Use `main_pipeline` with `neuron_coords_file`:
+
+```python
+from main_pipeline_3d import main_pipeline
+
+main_pipeline(
+    input_path='./datasets',
+    input_folder='test',
+    psffit_matrix_file='./pth/psffit_matrix.mat',
+    SR_up_rate=2,
+    GPU_index='0',
+    output_dir='./results/fast_trace_case',
+    neuron_coords_file='./results/previous_case/STEP_6_MN/STEP_7_VM/result.mat',
+)
+```
+
+This mode writes `STEP_FAST_TRACE/result_fast_trace.mat`, including:
+- `spatial_3D`: input coordinates
+- `all_single_neuron_trace`: fast merged traces
+- `all_view_traces`: per-view traces
 
 ## V. Model Training (`main_train.py`)
 
