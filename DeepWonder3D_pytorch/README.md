@@ -6,6 +6,12 @@ Welcome to **DeepWonder3D**, a comprehensive computational framework designed fo
 
 Before executing the pipelines, ensure your local directory is structured as follows to allow for seamless data ingestion and model initialization:
 
+Before running scripts, install Python dependencies in your current environment:
+
+```bash
+pip install -r requirements.txt
+```
+
 ### 1. Pre-trained Weights and Calibration (`/pth`)
 
 The `/pth` directory must contain the necessary network weights and the optical calibration matrix:
@@ -115,6 +121,42 @@ Upon completion, the `output_dir` will contain a structured sequence of results 
 - **`times`**: Total running time of each processing step.
 
 
+
+
+### 3. Fast trace-only mode with known neuron coordinates
+
+For longitudinal imaging of the same sample, you can reuse known neuron 3D coordinates (for example from a previous run's `STEP_7_VM/result.mat`) and choose one of three speed/quality trade-off modes:
+
+- `fast_trace_mode='raw'`: skip all preprocessing, fastest speed, baseline quality.
+- `fast_trace_mode='deno_rmbg'`: run DENO + RMBG first, then fast trace extraction.
+- `fast_trace_mode='tr_sr_rmbg'`: run DENO + TR + SR + RMBG first, then fast trace extraction (higher quality, slower than the two modes above).
+
+Use `main_pipeline` with `neuron_coords_file` and the selected `fast_trace_mode`:
+
+```python
+from main_pipeline_3d import main_pipeline
+
+main_pipeline(
+    input_path='./datasets',
+    input_folder='test',
+    psffit_matrix_file='./pth/psffit_matrix.mat',
+    SR_up_rate=2,
+    GPU_index='0',
+    output_dir='./results/fast_trace_case',
+    neuron_coords_file='./results/previous_case/STEP_6_MN/STEP_7_VM/result.mat',
+    fast_trace_mode='deno_rmbg',  # raw / deno_rmbg / tr_sr_rmbg
+)
+```
+
+Outputs are saved under mode-specific folders:
+- `STEP_FAST_TRACE_RAW/result_fast_trace.mat`
+- `STEP_FAST_TRACE_DENO_RMBG/result_fast_trace.mat`
+- `STEP_FAST_TRACE_TR_SR_RMBG/result_fast_trace.mat`
+
+Each `.mat` output contains:
+- `spatial_3D`: input coordinates
+- `all_single_neuron_trace`: merged traces
+- `all_view_traces`: per-view traces
 
 ## V. Model Training (`main_train.py`)
 
