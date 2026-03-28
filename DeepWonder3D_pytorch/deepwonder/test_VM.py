@@ -2,6 +2,7 @@ import os
 import numpy as np
 from deepwonder.VM.utils import *
 from natsort import natsorted
+import re
 
 
 def run_view_merging_pipeline(
@@ -80,12 +81,14 @@ def run_view_merging_pipeline(
 
         # extract view IDs from file names: *_view_{id}.mat
         view_list = []
+        view_map = {}
         for filename in files_name:
-            ind1 = filename.index('_view_')
-            subtmp = filename[ind1 + 6 :]
-            ind2 = subtmp.index('.')
-            view_id = int(subtmp[:ind2])
+            matched = re.search(r'_view_(\d+)', filename)
+            if not matched:
+                raise ValueError(f'Failed to parse view id from filename: {filename}')
+            view_id = int(matched.group(1))
             view_list.append(view_id)
+            view_map[filename] = view_id
 
         # containers for all neurons across views
         T_trace_list = []
@@ -104,7 +107,7 @@ def run_view_merging_pipeline(
 
                 T_trace_list.append(np.squeeze(temporal_trace))
                 S_center_list.append(np.squeeze(spatial_center))
-                id_list.append([view_list[files_name.index(filename)], neuron_id])
+                id_list.append([view_map[filename], neuron_id])
 
         # convert to numpy arrays
         T_trace_array = np.array(T_trace_list)
@@ -129,7 +132,11 @@ def run_view_merging_pipeline(
     # Step 2: Spatiotemporal view merging
     print('Spatiotemporal view merging...')
     R_path = os.path.join(SAVE, 'R_matrix.mat')
-    R = calculate_coef_matrix(T_trace_array, id_array, R_path)
+    if os.path.exists(R_path):
+        print(f'{R_path} exists! Loading directly...')
+        R = loadmat_auto(R_path)['R']
+    else:
+        R = calculate_coef_matrix(T_trace_array, id_array, R_path)
 
     neuron_group = spatio_temporal_clustering(
         R, id_array, S_center_array, cutoff_spatial, cutoff_temporal, min_view_num
